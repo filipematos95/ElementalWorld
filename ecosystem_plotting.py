@@ -13,7 +13,6 @@ def plot_ecosystem_aggregate(grid, timepoint='', save_path=None):
 
     # Determine N_Species based on channel count
     # Total = 4 + 5*N + N
-    # 29 channels -> 5 species
     total_ch = data.shape[2]
     n_spp = (total_ch - 4) // 6
     
@@ -161,16 +160,20 @@ def plot_community_map(grid, timepoint='', save_path=None):
     # Define Color Vectors for up to 6 species
     # Spp0=Red, Spp1=Green, Spp2=Blue, Spp3=Yellow, Spp4=Cyan, Spp5=Magenta
     colors = [
-        np.array([1.0, 0.0, 0.0]), # Red
-        np.array([0.0, 1.0, 0.0]), # Green
-        np.array([0.0, 0.0, 1.0]), # Blue
-        np.array([1.0, 1.0, 0.0]), # Yellow
-        np.array([0.0, 1.0, 1.0]), # Cyan
-        np.array([1.0, 0.0, 1.0]), # Magenta
-    ]
-    
+            np.array([1.0, 0.0, 0.0]), # 0: Red
+            np.array([0.0, 1.0, 0.0]), # 1: Green
+            np.array([0.0, 0.0, 1.0]), # 2: Blue
+            np.array([1.0, 1.0, 0.0]), # 3: Yellow
+            np.array([0.0, 1.0, 1.0]), # 4: Cyan
+            np.array([1.0, 0.0, 1.0]), # 5: Magenta
+            np.array([1.0, 0.5, 0.0]), # 6: Orange
+            np.array([0.5, 1.0, 0.0]), # 7: Lime
+            np.array([0.5, 0.0, 0.5]), # 8: Purple
+            np.array([0.0, 0.5, 0.5]), # 9: Teal
+        ]
+        
     # Additive Mixing: Sum(Biomass * Color)
-    for i in range(min(n_spp, 6)):
+    for i in range(min(n_spp, 10)):
         # Extract species i biomass map (H, W)
         spp_map = norm_biomass[:, :, i]
         
