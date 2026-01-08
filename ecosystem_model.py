@@ -189,7 +189,7 @@ class EcosystemModel:
         new_pools_flat = tf.reshape(new_pools, (self.H, self.W, 5*self.N_SPP))
         
         # Metrics: Just biomass (H, W, N)
-        # We use max_biomass derived earlier
+        # We use max_biomass derived earlieR
         
         final_stack = tf.concat([
             tf.stack([soil_C, soil_O, soil_N_new, soil_P_new], axis=-1),

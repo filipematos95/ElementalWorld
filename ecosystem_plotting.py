@@ -67,7 +67,7 @@ def plot_ecosystem_aggregate(grid, timepoint='', save_path=None):
     # Render Biota
     for idx, title, cmap in biota_plots:
         ax = axes[1, idx]
-        val = total_biota_pools[:, :, idx] # 0=C, 1=O, 2=N, 3=P
+        val = total_biota_pools[:, :, idx] # 0=C, 1=O, 2=N, 3=p
         
         # Dynamic Scaling
         vmax = max(0.1, val.max()) # Auto-scale but min 0.1
