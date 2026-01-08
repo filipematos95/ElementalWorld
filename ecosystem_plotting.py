@@ -196,7 +196,7 @@ def plot_community_map(grid, timepoint='', save_path=None):
     from matplotlib.patches import Patch
     legend_elements = [
         Patch(facecolor=colors[i], label=f'Species {i}') 
-        for i in range(min(n_spp, 6))
+        for i in range(min(n_spp, 10))
     ]
     plt.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.3, 1))
     
