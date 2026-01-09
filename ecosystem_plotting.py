@@ -132,73 +132,73 @@ def plot_species_abundance(grid, timepoint='', save_path=None):
     if save_path: plt.savefig(save_path)
     plt.show()
 
-def plot_community_map(grid, timepoint='', save_path=None):
+def plot_community_map(grid, n_species, timepoint='', save_path=None):
     """
-    Creates a single RGB map where each species maps to a color.
-    Ideal for N=3 species (RGB), but works for N=1 to N=6.
+    Creates an RGB community map where each species has a fixed color.
+    grid: state array (H, W, 4 + 5*N + N) or tf.Tensor
+    n_species: number of species (N)
     """
-    if hasattr(grid, 'numpy'):
+    # Accept tf.Tensor or np.array
+    if hasattr(grid, "numpy"):
         data = grid.numpy()
     else:
         data = grid
-        
-    total_ch = data.shape[2]
-    n_spp = (total_ch - 4) // 6
-    
-    # Locate Biomass Channels
-    bio_start = 4 + (5 * n_spp)
-    biomass_stack = data[:, :, bio_start:] # Shape (H, W, N)
-    
-    # Normalize biomass to 0-1 range for color intensity
-    # We assume max biomass per cell ~1.2 (Carrying Capacity)
-    norm_biomass = np.clip(biomass_stack / 1.0, 0, 1)
-    H, W, _ = norm_biomass.shape
-    
-    # Create Output RGB Image (H, W, 3)
-    rgb_map = np.zeros((H, W, 3))
-    
-    # Define Color Vectors for up to 6 species
-    # Spp0=Red, Spp1=Green, Spp2=Blue, Spp3=Yellow, Spp4=Cyan, Spp5=Magenta
+
+    H, W, _ = data.shape
+    N = n_species
+
+    # Biomass channels: after 4 soil + 5*N species element pools
+    bio_start = 4 + 5 * N
+    biomass_stack = data[:, :, bio_start: bio_start + N]  # (H, W, N)
+
+    # Normalize biomass for color intensity
+    max_b = np.nanmax(biomass_stack)
+    if max_b == 0 or np.isnan(max_b):
+      max_b = 1.0  # avoid division by 0, but in that case map is truly empty
+    norm_biomass = np.clip(biomass_stack / max_b, 0, 1)
+    print("Community map: biomass max used for scaling =", max_b)
+
+    # Output RGB image
+    rgb_map = np.zeros((H, W, 3), dtype=float)
+
+    # Colors for up to 10 species
     colors = [
-            np.array([1.0, 0.0, 0.0]), # 0: Red
-            np.array([0.0, 1.0, 0.0]), # 1: Green
-            np.array([0.0, 0.0, 1.0]), # 2: Blue
-            np.array([1.0, 1.0, 0.0]), # 3: Yellow
-            np.array([0.0, 1.0, 1.0]), # 4: Cyan
-            np.array([1.0, 0.0, 1.0]), # 5: Magenta
-            np.array([1.0, 0.5, 0.0]), # 6: Orange
-            np.array([0.5, 1.0, 0.0]), # 7: Lime
-            np.array([0.5, 0.0, 0.5]), # 8: Purple
-            np.array([0.0, 0.5, 0.5]), # 9: Teal
-        ]
-        
-    # Additive Mixing: Sum(Biomass * Color)
-    for i in range(min(n_spp, 10)):
-        # Extract species i biomass map (H, W)
+        np.array([1.0, 0.0, 0.0]),  # 0: Red
+        np.array([0.0, 1.0, 0.0]),  # 1: Green
+        np.array([0.0, 0.0, 1.0]),  # 2: Blue
+        np.array([1.0, 1.0, 0.0]),  # 3: Yellow
+        np.array([0.0, 1.0, 1.0]),  # 4: Cyan
+        np.array([1.0, 0.0, 1.0]),  # 5: Magenta
+        np.array([1.0, 0.5, 0.0]),  # 6: Orange
+        np.array([0.5, 1.0, 0.0]),  # 7: Lime
+        np.array([0.5, 0.0, 0.5]),  # 8: Purple
+        np.array([0.0, 0.5, 0.5]),  # 9: Teal
+    ]
+
+    # Additive mixing: sum(biomass * color) for each species
+    n_plot = min(N, len(colors))
+    for i in range(n_plot):
         spp_map = norm_biomass[:, :, i]
-        
-        # Reshape to (H, W, 1) for broadcasting
-        spp_map_exp = spp_map[:, :, np.newaxis]
-        
-        # Add its color contribution
-        rgb_map += spp_map_exp * colors[i]
-        
-    # Clip to valid RGB range (in case of overlap > 1.0)
+        rgb_map += spp_map[:, :, np.newaxis] * colors[i]
+
     rgb_map = np.clip(rgb_map, 0, 1)
-    
-    # PLOT
+    print("rgb_map min/max:", rgb_map.min(), rgb_map.max())
+
+    # Plot
     plt.figure(figsize=(8, 8))
     plt.imshow(rgb_map)
-    plt.title(f"Community Composition {timepoint}", fontsize=14, fontweight='bold')
-    plt.axis('off')
-    
-    # Custom Legend
+    plt.title(f"Community Composition {timepoint}", fontsize=14, fontweight="bold")
+    plt.axis("off")
+
     from matplotlib.patches import Patch
     legend_elements = [
-        Patch(facecolor=colors[i], label=f'Species {i}') 
-        for i in range(min(n_spp, 10))
+        Patch(facecolor=colors[i], label=f"Species {i}")
+        for i in range(n_plot)
     ]
-    plt.legend(handles=legend_elements, loc='upper right', bbox_to_anchor=(1.3, 1))
+    plt.legend(handles=legend_elements, loc="upper right", bbox_to_anchor=(1.3, 1))
     
-    if save_path: plt.savefig(save_path, bbox_inches='tight')
+    if save_path:
+        plt.savefig(save_path, bbox_inches="tight", dpi=150)
+
+
     plt.show()
