@@ -45,8 +45,8 @@ class EcosystemModel:
         # Global parameters
         self.params = params
         
-        # 3x3 neighborhood kernel for dispersal
-        self.kernel = tf.ones([3, 3, self.N_CHANNELS, 1], dtype=tf.float32)
+        # 5x5 neighborhood kernel for dispersal
+        self.kernel = tf.ones([5, 5, self.N_CHANNELS, 1], dtype=tf.float32)
         self.grid = None
 
 
@@ -72,13 +72,22 @@ class EcosystemModel:
     def step(self):
         # 1. Neighborhood convolution
         current_grid = self.grid
-        padded = tf.pad(current_grid, [[1, 1], [1, 1], [0, 0]])
+        padded = tf.pad(current_grid, [[2, 2], [2, 2], [0, 0]])
         neighbors = tf.nn.depthwise_conv2d(
             padded[tf.newaxis, ...],
             self.kernel,
             strides=[1, 1, 1, 1],
             padding="VALID",
         )[0]
+
+
+        # 1b. Neighborhood means for soil N, P (for diffusion)
+        neigh_soil = neighbors[:, :, :4]                # C,O,N,P neighborhoods
+        neigh_C_s, neigh_O_s, neigh_N_s, neigh_P_s = tf.unstack(neigh_soil, axis=-1)
+
+        # Because kernel is 5x5 of ones, divide by 25 to get mean
+        neigh_N_mean = neigh_N_s / 25.0
+        neigh_P_mean = neigh_P_s / 25.0
         
         # 2. Unpack soil and species pools
         soil      = current_grid[:, :, :4]
@@ -162,6 +171,16 @@ class EcosystemModel:
         spp_C_new = spp_C_seeded + growth + dispersal
         
         # 8. Nutrient demands for growth
+
+        D_N = self.params.get("diff_N", 0.0)
+        D_P = self.params.get("diff_P", 0.0)
+        soil_N = soil_N + D_N * (neigh_N_mean - soil_N)
+        soil_P = soil_P + D_P * (neigh_P_mean - soil_P)
+
+        soil_N = tf.clip_by_value(soil_N, 0.0, 1.0)
+        soil_P = tf.clip_by_value(soil_P, 0.0, 1.0)
+
+
         target_B  = spp_C_new / (f_C_vec + 1e-9)
         current_N = spp_pools_seeded[..., 2]
         current_P = spp_pools_seeded[..., 3]
