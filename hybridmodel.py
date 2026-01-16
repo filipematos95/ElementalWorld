@@ -241,4 +241,52 @@ class HybridEcosystem:
         if n_s > 0:
             p_dat = tf.gather(up_rows, p_idx)
 
-            dy = tf.random.uniform((n_s,),
+            dy = tf.random.uniform((n_s,), -1, 2, dtype=tf.int32)
+            dx = tf.random.uniform((n_s,), -1, 2, dtype=tf.int32)
+            ny = (tf.cast(p_dat[:,0], tf.int32) + dy) % self.H
+            nx = (tf.cast(p_dat[:,1], tf.int32) + dx) % self.W
+
+            # Inheritance: Maternal Effect
+            # Seeds start with the nutrient density of their parent at birth
+            c_rows = tf.concat([
+                tf.cast(ny, tf.float32)[:, tf.newaxis],
+                tf.cast(nx, tf.float32)[:, tf.newaxis],
+                p_dat[:, 2:3],
+                tf.ones((n_s, 1)) * self.seed_mass,
+                p_dat[:, 4:9],
+                tf.ones((n_s, 1))
+            ], axis=1)
+
+            st = self.n_agents.value()
+            safe = tf.minimum(n_s, self.MAX_AGENTS - st)
+            if safe > 0:
+                self.agents.scatter_nd_update(
+                    tf.range(st, st+safe)[:, tf.newaxis],
+                    c_rows[:safe]
+                )
+                self.n_agents.assign_add(safe)
+
+        return self.n_agents
+
+    def get_biomass_grid(self):
+        active_mask = self.agents[:, 9] > 0.5
+        active_idx = tf.where(active_mask)
+        if tf.shape(active_idx)[0] == 0:
+            return np.zeros((self.H, self.W))
+        data = tf.gather_nd(self.agents, active_idx)
+        coords = tf.cast(data[:, 0:2], tf.int32)
+        mass = data[:, 3]
+        grid = tf.zeros((self.H, self.W))
+        grid = tf.tensor_scatter_nd_add(grid, coords, mass)
+        return grid.numpy()
+
+    def get_element_pools(self):
+        active_mask = self.agents[:, 9] > 0.5
+        idx = tf.where(active_mask)
+        if tf.shape(idx)[0] == 0: return [0.0, 0.0, 0.0, 0.0, 0.0]
+        data = tf.gather_nd(self.agents, idx)
+        mass = data[:, 3]
+        stoich = data[:, 4:9]
+        element_masses = stoich * mass[:, tf.newaxis]
+        totals = tf.reduce_sum(element_masses, axis=0)
+        return totals.numpy()
