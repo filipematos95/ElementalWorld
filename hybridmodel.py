@@ -3,7 +3,7 @@ import numpy as np
 
 class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right, growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
-                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5):
+                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.2):
         """
         Initialize the Ecosystem.
 
@@ -26,9 +26,30 @@ class HybridEcosystem:
         # --- 1. SOIL SYSTEM (8 Channels) ---
         # [0:4] Inorganic N, P, K, O (Available)
         # [4:8] Organic   N, P, K, O (Litter/Locked)
-        init_inorg = tf.random.uniform((self.H, self.W, 4), 0.2, 0.8)
-        init_org   = tf.zeros((self.H, self.W, 4))
-        self.soil  = tf.Variable(tf.concat([init_inorg, init_org], axis=-1), name="Soil")
+
+        # Base ratio (same across all pixels, with small variation)
+        if soil_base_ratio is None:
+            soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
+
+        # Create spatial variation: small perturbations around base ratio
+        # Shape: (H, W, 4)
+        noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=0.05)
+        base_tiled = tf.constant(soil_base_ratio, dtype=tf.float32)[tf.newaxis, tf.newaxis, :]
+        base_tiled = tf.tile(base_tiled, [self.H, self.W, 1])
+
+        ratio_raw = base_tiled + noise
+        ratio_raw = tf.maximum(0.01, ratio_raw)  # Prevent negatives
+        init_inorg_ratio = ratio_raw / tf.reduce_sum(ratio_raw, axis=2, keepdims=True)  # Normalize to sum=1
+
+        # Pool size varies spatially (some areas richer than others)
+        pool_size = tf.random.normal((self.H, self.W, 1), mean=soil_pool_mean, stddev=soil_pool_std)
+        pool_size = tf.maximum(0.1, pool_size)  # Minimum pool
+
+        # Final inorganic concentrations = ratio × pool
+        init_inorg = init_inorg_ratio * pool_size
+
+        init_org = tf.zeros((self.H, self.W, 4))
+        self.soil = tf.Variable(tf.concat([init_inorg, init_org], axis=-1), name="Soil")
 
         # Diffusion Kernel
         k = np.array([[0.05, 0.1, 0.05], [0.1, 0.4, 0.1], [0.05, 0.1, 0.05]], dtype=np.float32)
