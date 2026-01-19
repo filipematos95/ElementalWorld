@@ -126,32 +126,29 @@ class HybridEcosystem:
         # Desired growth = fitness * growth_rate * mass
         desired_growth = niche_fitness * self.growth_rate * mass
 
-        # STEP 1: Carbon from atmosphere (unlimited)
+        # STEP 1: Carbon from atmosphere (unlimited) — but only if growth actually happens
         c_uptake = desired_growth * curr_C
 
         # STEP 2: Remaining biomass to fill from soil at soil ratio
         remaining = desired_growth - c_uptake
 
-        # Get soil ratio at agent location: inorg_new is [H, W, 4] = [N, P, K, O]
-        soil_ratio_npko = tf.gather_nd(inorg_new, coords)  # [N, P, K, O]
+        soil_ratio_npko = tf.gather_nd(inorg_new, coords)  # [N,P,K,O]
         soil_sum = tf.reduce_sum(soil_ratio_npko, axis=1, keepdims=True) + 1e-9
-        soil_ratio_norm = soil_ratio_npko / soil_sum  # Normalized [N, P, K, O] ratios
+        soil_ratio_norm = soil_ratio_npko / soil_sum
 
-        # Desired nutrients from soil (at soil's ratio)
-        desired_npko = remaining[:, tf.newaxis] * soil_ratio_norm  # [n_agents, 4]
+        desired_npko = remaining[:, tf.newaxis] * soil_ratio_norm
+        available_npko = tf.gather_nd(inorg_new, coords)
 
-        # STEP 3: Check availability (only N, P, K, O matter for growth)
-        available_npko = tf.gather_nd(inorg_new, coords)  # [n_agents, 4]
+        can_grow = tf.reduce_all(available_npko >= desired_npko, axis=1)
 
-        # Can grow if all nutrients available
-        can_grow = tf.reduce_all(available_npko >= desired_npko, axis=1)  # [n_agents]
+        # Gate ALL uptake (including C) on can_grow
+        actual_growth = tf.where(can_grow, desired_growth, 0.0)
+        c_uptake      = tf.where(can_grow, c_uptake, 0.0)
 
-        # STEP 4: If can grow, uptake; otherwise, don't grow
         up_N = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 0:1], 0.0)
         up_P = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 1:2], 0.0)
         up_K = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 2:3], 0.0)
         up_O = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 3:4], 0.0)
-        c_uptake = tf.where(can_grow, desired_growth * curr_C, 0.0)
 
         # Actual growth (only if can_grow)
         actual_growth = tf.where(can_grow, desired_growth, 0.0)
@@ -165,14 +162,15 @@ class HybridEcosystem:
 
         # --- C. GROWTH (Quota + Space + Niche) ---
         # New mass after growth
-        up_mass = mass + actual_growth
-
+        # --- C. GROWTH (Quota + Space + Niche) ---
         MIN_QUOTA = 0.05
-        Q_C = pool_C / (up_mass + 1e-9)
-        Q_N = pool_N / (up_mass + 1e-9)
-        Q_P = pool_P / (up_mass + 1e-9)
-        Q_K = pool_K / (up_mass + 1e-9)
-        Q_O = pool_O / (up_mass + 1e-9)
+
+        # Quotas should be computed relative to CURRENT biomass (no dilution by growth that didn't happen)
+        Q_C = pool_C / (mass + 1e-9)
+        Q_N = pool_N / (mass + 1e-9)
+        Q_P = pool_P / (mass + 1e-9)
+        Q_K = pool_K / (mass + 1e-9)
+        Q_O = pool_O / (mass + 1e-9)
 
         g_C = tf.maximum(0.0, 1.0 - (MIN_QUOTA / (Q_C + 1e-9)))
         g_N = tf.maximum(0.0, 1.0 - (MIN_QUOTA / (Q_N + 1e-9)))
@@ -181,17 +179,25 @@ class HybridEcosystem:
         g_O = tf.maximum(0.0, 1.0 - (MIN_QUOTA / (Q_O + 1e-9)))
         limit_g = tf.minimum(tf.minimum(g_C, g_N), tf.minimum(tf.minimum(g_P, g_K), g_O))
 
-        # Space Limit
         grid_bio = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, mass)
         loc_bio  = tf.gather_nd(grid_bio, coords)
         space_f  = tf.maximum(0.0, 1.0 - (loc_bio / self.K_biomass))
 
-        # Realized Growth after quota and space constraints
-        realized_growth  = actual_growth * limit_g * space_f
+        # ONLY actual_growth can add biomass
+        realized_growth = actual_growth * limit_g * space_f
 
-        maint = up_mass * self.respiration_rate
-        fin_mass = up_mass + realized_growth  - maint
+        # Starvation causes decline because maint is always paid
+        maint = mass * self.respiration_rate
+        fin_mass = mass + realized_growth - maint
+
         alive = tf.cast(fin_mass > 0.01, tf.float32)
+
+        # --- D. RECYCLING ---
+        # Prevent negative masses from creating negative 'dead' fluxes
+        fin_mass_pos = tf.maximum(0.0, fin_mass)
+
+        dead = fin_mass_pos * (1.0 - alive)
+        turn = fin_mass_pos * self.turnover_rate * alive
 
         # --- D. RECYCLING ---
         dead = fin_mass * (1.0 - alive)
