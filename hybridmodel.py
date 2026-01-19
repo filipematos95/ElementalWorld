@@ -308,3 +308,14 @@ class HybridEcosystem:
         element_masses = stoich * mass[:, tf.newaxis]
         totals = tf.reduce_sum(element_masses, axis=0)
         return totals.numpy()
+
+    def get_space_factor_grid(self):
+        """Returns a grid of Space Limitation Factors (0.0 = Full, 1.0 = Empty)."""
+        # 1. Get total biomass per pixel
+        grid_mass = self.get_biomass_grid() # Uses existing method
+
+        # 2. Calculate Space Factor
+        # (Same formula used in step())
+        space_factor = np.maximum(0.0, 1.0 - (grid_mass / self.K_biomass))
+
+        return space_factor
