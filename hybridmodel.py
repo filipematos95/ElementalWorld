@@ -151,6 +151,7 @@ class HybridEcosystem:
         up_P = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 1:2], 0.0)
         up_K = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 2:3], 0.0)
         up_O = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 3:4], 0.0)
+        c_uptake = tf.where(can_grow, desired_growth * curr_C, 0.0)
 
         # Actual growth (only if can_grow)
         actual_growth = tf.where(can_grow, desired_growth, 0.0)
@@ -186,10 +187,10 @@ class HybridEcosystem:
         space_f  = tf.maximum(0.0, 1.0 - (loc_bio / self.K_biomass))
 
         # Realized Growth after quota and space constraints
-        net_growth = up_mass * limit_g * space_f
+        realized_growth  = actual_growth * limit_g * space_f
 
         maint = up_mass * self.respiration_rate
-        fin_mass = up_mass + net_growth - maint
+        fin_mass = up_mass + realized_growth  - maint
         alive = tf.cast(fin_mass > 0.01, tf.float32)
 
         # --- D. RECYCLING ---
