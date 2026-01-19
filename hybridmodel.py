@@ -2,7 +2,8 @@ import tensorflow as tf
 import numpy as np
 
 class HybridEcosystem:
-    def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right):
+    def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right, growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
+                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5):
         """
         Initialize the Ecosystem.
 
@@ -39,14 +40,13 @@ class HybridEcosystem:
         self.n_agents = tf.Variable(0, dtype=tf.int32)
 
         # --- 3. PARAMETERS ---
-        self.growth_rate         = 0.7   # Base growth rate (photosynthesis)
-        self.respiration_rate    = 0.02
-        self.turnover_rate       = 0.02
-        self.mineralization_rate = 0.05
-        self.seed_cost           = 0.3
-        self.seed_mass           = 0.05
-        self.K_biomass           = 1.5
-
+        self.growth_rate         = growth_rate
+        self.respiration_rate    = respiration_rate
+        self.turnover_rate       = turnover_rate
+        self.mineralization_rate = mineralization_rate
+        self.seed_cost           = seed_cost
+        self.seed_mass           = seed_mass
+        self.K_biomass           = K_biomass
     def add_initial_seeds(self, count=50, species_id=0):
 
         y = tf.random.uniform((count,), 0, self.H)
