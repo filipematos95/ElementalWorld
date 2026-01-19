@@ -39,8 +39,8 @@ class HybridEcosystem:
         self.n_agents = tf.Variable(0, dtype=tf.int32)
 
         # --- 3. PARAMETERS ---
-        self.growth_rate         = 0.5   # Base growth rate (photosynthesis)
-        self.respiration_rate    = 0.05
+        self.growth_rate         = 0.7   # Base growth rate (photosynthesis)
+        self.respiration_rate    = 0.02
         self.turnover_rate       = 0.02
         self.mineralization_rate = 0.05
         self.seed_cost           = 0.3
