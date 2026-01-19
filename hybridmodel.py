@@ -3,7 +3,7 @@ import numpy as np
 
 class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right, growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
-                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.2):
+                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01,soil_ratio_noise=0.05):
         """
         Initialize the Ecosystem.
 
@@ -33,7 +33,7 @@ class HybridEcosystem:
 
         # Create spatial variation: small perturbations around base ratio
         # Shape: (H, W, 4)
-        noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=0.05)
+        noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
         base_tiled = tf.constant(soil_base_ratio, dtype=tf.float32)[tf.newaxis, tf.newaxis, :]
         base_tiled = tf.tile(base_tiled, [self.H, self.W, 1])
 
