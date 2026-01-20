@@ -426,4 +426,6 @@ class HybridEcosystem:
         # Clip to ensure valid range [0, 1]
         niche_fitness = tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
+        tf.print("Dist Norm (first 3):", dist_from_center_norm[:3])
+
         return niche_fitness
