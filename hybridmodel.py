@@ -126,7 +126,13 @@ class HybridEcosystem:
 
         inorg_in = inorg[tf.newaxis, ...]
         inorg_diff = tf.nn.depthwise_conv2d(inorg_in, self.diff_kernel, [1,1,1,1], "SAME")[0]
-        inorg_new = inorg_diff + 0.002 # External Input
+
+        # External Input (rain/deposition) matching the species niche to prevent drift
+        input_ratio = tf.constant([0.2, 0.1, 0.05, 0.05], dtype=tf.float32)
+        input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
+
+        # Add small consistent input (e.g. 0.008 total units per step)
+        inorg_new = inorg_diff + (input_ratio * 0.008)
 
         # ------------------------------------------
         # PHASE 2: AGENT BIOLOGY
