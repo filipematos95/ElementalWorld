@@ -125,8 +125,15 @@ class HybridEcosystem:
         org   = soil_curr[:, :, 4:8]
 
         inorg_in = inorg[tf.newaxis, ...]
-        inorg_diff = tf.nn.depthwise_conv2d(inorg_in, self.diff_kernel, [1,1,1,1], "SAME")[0]
-        inorg_new = inorg_diff + 0.002 # External Input
+        inorg_padded = tf.pad(inorg_in, [[0,0], [1,1], [1,1], [0,0]], mode='SYMMETRIC')
+        inorg_diff = tf.nn.depthwise_conv2d(inorg_padded, self.diff_kernel, [1,1,1,1], "VALID")[0]
+
+        # External Input (rain/deposition) matching the species niche to prevent drift
+        input_ratio = tf.constant([0.2, 0.1, 0.05, 0.05], dtype=tf.float32)
+        input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
+
+        # Add small consistent input
+        inorg_new = inorg_diff + (input_ratio * 0.008)
 
         # ------------------------------------------
         # PHASE 2: AGENT BIOLOGY
@@ -162,25 +169,23 @@ class HybridEcosystem:
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
 
-        if tf.shape(spp_ids)[0] > 0:
-            tf.print("\n--- FITNESS DEBUG ---")
-            tf.print("Agent 0 Elementome:", curr_elementome[0])
-            tf.print("Agent 0 Center:    ", my_centers[0])
-            tf.print("Agent 0 Tolerances:", my_left[0]) # Assuming symmetric for quick check
+        #if tf.shape(spp_ids)[0] > 0:
+        #   tf.print("\n--- FITNESS DEBUG ---")
+        #    tf.print("Agent 0 Elementome:", curr_elementome[0])
+        #    tf.print("Agent 0 Center:    ", my_centers[0])
+        #    tf.print("Agent 0 Tolerances:", my_left[0]) # Assuming symmetric for quick check
 
-            diff = curr_elementome[0] - my_centers[0]
-            tf.print("Difference:        ", diff)
+        #    diff = curr_elementome[0] - my_centers[0]
+        #    tf.print("Difference:        ", diff)
 
-            # Check the normalization shift
-            tf.print("Sum of Center:     ", tf.reduce_sum(my_centers[0]))
-            tf.print("Sum of Agent:      ", tf.reduce_sum(curr_elementome[0]))
+        #    # Check the normalization shift
+        #    tf.print("Sum of Center:     ", tf.reduce_sum(my_centers[0]))
+        #    tf.print("Sum of Agent:      ", tf.reduce_sum(curr_elementome[0]))
 
 
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
 
-        tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),
-                 "Mean:", tf.reduce_mean(niche_fitness),
-                 "Max:", tf.reduce_max(niche_fitness))
+       # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
         # --- B. NEW UPTAKE LOGIC ---
         # Desired growth = fitness * growth_rate * mass
@@ -399,21 +404,21 @@ class HybridEcosystem:
         tolerance = tf.where(delta < 0, my_left, my_right)
 
         # DEBUG: Print exact values used for calculation
-        tf.print("\n--- DEEP DEBUG ---")
-        tf.print("Delta[0]:", delta[0])
-        tf.print("Tol[0]:", tolerance[0])
+        #tf.print("\n--- DEEP DEBUG ---")
+        #tf.print("Delta[0]:", delta[0])
+        #tf.print("Tol[0]:", tolerance[0])
 
         normalized_deviation = delta / (tolerance + 1e-9)
-        tf.print("NormDev[0]:", normalized_deviation[0])
+        #tf.print("NormDev[0]:", normalized_deviation[0])
 
         sq = tf.square(normalized_deviation)
-        tf.print("Squared[0]:", sq[0])
+        #tf.print("Squared[0]:", sq[0])
 
         ss = tf.reduce_sum(sq, axis=1)
-        tf.print("SumSq[0]:", ss[0])
+        #tf.print("SumSq[0]:", ss[0])
 
         dist = tf.sqrt(ss)
-        tf.print("CalcDist[0]:", dist[0])
+        #tf.print("CalcDist[0]:", dist[0])
         # -------------------------------
 
         niche_fitness = 1.0 - dist
