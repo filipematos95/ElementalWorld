@@ -30,7 +30,8 @@ class HybridEcosystem:
         # Base ratio (same across all pixels, with small variation)
         if soil_base_ratio is None:
             soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
-
+        else:
+            print(soil_base_ratio)
         # Create spatial variation: small perturbations around base ratio
         # Shape: (H, W, 4)
         noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
@@ -47,7 +48,7 @@ class HybridEcosystem:
 
         # Final inorganic concentrations = ratio × pool
         init_inorg = init_inorg_ratio * pool_size
-
+        print(init_inorg)
         init_org = tf.zeros((self.H, self.W, 4))
         self.soil = tf.Variable(tf.concat([init_inorg, init_org], axis=-1), name="Soil")
 
