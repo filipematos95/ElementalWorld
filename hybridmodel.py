@@ -418,3 +418,13 @@ class HybridEcosystem:
 
         niche_fitness = 1.0 - dist
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
+
+    def update_grid(self):
+        # 1. Reset the grid to 0 (so we don't double-count old positions)
+        self.biomass_grid = np.zeros((self.height, self.width))
+
+        # 2. Loop through every agent and "paint" them
+        for agent in self.agents:
+            x, y = agent.position
+            # Add agent's biomass to that pixel
+            self.biomass_grid[y, x] += agent.biomass
