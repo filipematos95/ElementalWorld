@@ -360,23 +360,34 @@ class HybridEcosystem:
 
     def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right):
         """
-        Compute fitness based on AGENT'S CURRENT ELEMENTOME, not soil!
+        Compute fitness using Euclidean distance in normalized niche space.
+
+        Fitness = 1 - || (elementome - center) / tolerance ||
+
+        Where 'tolerance' is chosen per-element (left or right) based on the sign of deviation.
         """
-        # elementome_vals = [n_agents, 5] = agent's [C, N, P, K, O]
-        # my_centers = [n_agents, 5] = niche optimal [C, N, P, K, O]
-        # my_left/right = [n_agents, 5] = tolerance widths
+        # 1. Calculate signed deviation
+        delta = elementome_vals - my_centers  # [N, 5]
 
-        lower_bound = my_centers - my_left      # Minimum acceptable
-        upper_bound = my_centers + my_right     # Maximum acceptable
+        # 2. Select appropriate tolerance for each element (Left vs Right)
+        # If delta < 0 (deficit), use Left. If delta > 0 (excess), use Right.
+        tolerance = tf.where(delta < 0, my_left, my_right) # [N, 5]
 
-        dist_to_center = tf.abs(elementome_vals - my_centers)
-        max_dist = tf.maximum(my_left, my_right)  # Largest tolerance (symmetric)
+        # 3. Normalize the deviation by the tolerance
+        # A value of 1.0 means we are exactly at the border for that element.
+        # A value of 0.0 means we are at the center.
+        normalized_deviation = delta / (tolerance + 1e-9) # [N, 5]
 
-        # fitness = 1 - (distance_to_center / max_distance_to_border)
-        fitness_per_element = 1.0 - (dist_to_center / (max_dist + 1e-9))
-        fitness_per_element = tf.clip_by_value(fitness_per_element, 0.0, 1.0)
+        # 4. Compute Euclidean distance of this normalized vector
+        # This represents "how far are we from center relative to the niche shape"
+        # If dist = 1.0, we are on the 'surface' of the niche ellipsoid.
+        dist_from_center_norm = tf.norm(normalized_deviation, axis=1) # [N]
 
-        # Combine all 5 elements (C, N, P, K, O)
-        niche_fitness = tf.reduce_prod(fitness_per_element, axis=1)
+        # 5. Calculate Fitness
+        # 1.0 at center (dist=0), 0.0 at border (dist=1)
+        niche_fitness = 1.0 - dist_from_center_norm
+
+        # Clip to ensure valid range [0, 1]
+        niche_fitness = tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
         return niche_fitness
