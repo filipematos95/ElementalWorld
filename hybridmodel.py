@@ -73,8 +73,9 @@ class HybridEcosystem:
         x = tf.random.uniform((count,), 0, self.W)
         spp = tf.ones((count,)) * float(species_id)
         mass = tf.ones((count,)) * 0.1
+        center = self.niche_centers[species_id] # Shape (5,)
 
-        # --- BETTER INITIALIZATION ---
+    # --- BETTER INITIALIZATION ---
         # 1. Proportional Noise (10%) to keep relative ratios sane
         # This works better than additive noise for trace elements (like K=0.05)
         noise_scale = 0.1
