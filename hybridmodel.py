@@ -140,6 +140,21 @@ class HybridEcosystem:
         my_left    = tf.gather(self.niche_left,    spp_ids)
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
+
+        if tf.shape(spp_ids)[0] > 0:
+            tf.print("\n--- FITNESS DEBUG ---")
+            tf.print("Agent 0 Elementome:", curr_elementome[0])
+            tf.print("Agent 0 Center:    ", my_centers[0])
+            tf.print("Agent 0 Tolerances:", my_left[0]) # Assuming symmetric for quick check
+
+            diff = curr_elementome[0] - my_centers[0]
+            tf.print("Difference:        ", diff)
+
+            # Check the normalization shift
+            tf.print("Sum of Center:     ", tf.reduce_sum(my_centers[0]))
+            tf.print("Sum of Agent:      ", tf.reduce_sum(curr_elementome[0]))
+
+
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
 
         tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),
