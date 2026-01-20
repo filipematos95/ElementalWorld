@@ -339,7 +339,32 @@ class HybridEcosystem:
         ], axis=1)
         self.agents.scatter_nd_update(active_idx, up_rows)
 
-        # Spawn Seeds
+        # 1. Read the full agent tensor
+        current_agents = self.agents.read_value()
+
+        # 2. Identify who is truly alive
+        # (Indices 0 to n_agents are valid, AND column 9 [alive flag] must be > 0.5)
+        valid_range_mask = tf.range(self.MAX_AGENTS) < self.n_agents
+        is_alive = current_agents[:, 9] > 0.5
+        keep_mask = tf.logical_and(valid_range_mask, is_alive)
+
+        # 3. Gather only the living agents
+        living_agents = tf.boolean_mask(current_agents, keep_mask)
+
+        # 4. Count how many survived
+        new_count = tf.shape(living_agents)[0]
+
+        # 5. Overwrite the main tensor
+        # We clear the tensor (optional, or just overwrite top rows) and place survivors at the top
+        # It's faster to just scatter update the top 'new_count' rows and ignore the rest
+        # But to be clean, let's pad the rest with zeros so we don't have "ghost" data at the bottom
+        padding = tf.zeros((self.MAX_AGENTS - new_count, 10), dtype=tf.float32)
+        new_tensor_state = tf.concat([living_agents, padding], axis=0)
+
+        self.agents.assign(new_tensor_state)
+        self.n_agents.assign(new_count)
+
+# Spawn Seeds
         p_idx = tf.where(parents)[:, 0]
         n_s = tf.shape(p_idx)[0]
         if n_s > 0:
@@ -366,6 +391,8 @@ class HybridEcosystem:
                     c_rows[:safe]
                 )
                 self.n_agents.assign_add(safe)
+
+
 
         return self.n_agents
 
