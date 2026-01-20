@@ -125,7 +125,8 @@ class HybridEcosystem:
         org   = soil_curr[:, :, 4:8]
 
         inorg_in = inorg[tf.newaxis, ...]
-        inorg_diff = tf.nn.depthwise_conv2d(inorg_in, self.diff_kernel, [1,1,1,1], "SAME")[0]
+        inorg_padded = tf.pad(inorg_in, [[0,0], [1,1], [1,1], [0,0]], mode='SYMMETRIC')
+        inorg_diff = tf.nn.depthwise_conv2d(inorg_padded, self.diff_kernel, [1,1,1,1], "VALID")[0]
 
         # External Input (rain/deposition) matching the species niche to prevent drift
         input_ratio = tf.constant([0.2, 0.1, 0.05, 0.05], dtype=tf.float32)
