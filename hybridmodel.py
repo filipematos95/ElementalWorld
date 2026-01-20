@@ -74,11 +74,31 @@ class HybridEcosystem:
         spp = tf.ones((count,)) * float(species_id)
         mass = tf.ones((count,)) * 0.1
 
-        # Look up Species Niche Center to initialize stoichiometry
-        center = self.niche_centers[species_id] # Shape (5,): [C, N, P, K, O]
-        raw = center[tf.newaxis, :] + tf.random.normal((count, 5), 0, 0.005)
-        raw = tf.maximum(0.01, raw)
-        stoich = raw / tf.reduce_sum(raw, axis=1, keepdims=True)
+        # --- BETTER INITIALIZATION ---
+        # 1. Proportional Noise (10%) to keep relative ratios sane
+        # This works better than additive noise for trace elements (like K=0.05)
+        noise_scale = 0.1
+        multiplicative_noise = tf.random.normal((count, 5), mean=1.0, stddev=noise_scale)
+        raw = center[tf.newaxis, :] * multiplicative_noise
+
+        # 2. Normalize to sum=1 (initial stoichiometry)
+        stoich_noisy = raw / tf.reduce_sum(raw, axis=1, keepdims=True)
+
+        # 3. SAFETY CLAMP: Force seeds to be within their niche tolerance
+        # (This prevents "dead-on-arrival" seeds due to bad RNG luck)
+        my_left = self.niche_left[species_id]
+        my_right = self.niche_right[species_id]
+
+        # Define safe bounds (90% of tolerance)
+        min_safe = center - (my_left * 0.9)
+        max_safe = center + (my_right * 0.9)
+
+        # Clip the randomized values to stay inside the survivable niche
+        stoich_safe = tf.clip_by_value(stoich_noisy, min_safe, max_safe)
+
+        # 4. Final Re-normalization (clipping might shift sum slightly, so normalize again)
+        stoich = stoich_safe / tf.reduce_sum(stoich_safe, axis=1, keepdims=True)
+
 
         alive = tf.ones((count,))
 
