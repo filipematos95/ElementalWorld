@@ -30,8 +30,7 @@ class HybridEcosystem:
         # Base ratio (same across all pixels, with small variation)
         if soil_base_ratio is None:
             soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
-        else:
-            print(soil_base_ratio)
+
         # Create spatial variation: small perturbations around base ratio
         # Shape: (H, W, 4)
         noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
@@ -48,7 +47,6 @@ class HybridEcosystem:
 
         # Final inorganic concentrations = ratio × pool
         init_inorg = init_inorg_ratio * pool_size
-        print(init_inorg)
         init_org = tf.zeros((self.H, self.W, 4))
         self.soil = tf.Variable(tf.concat([init_inorg, init_org], axis=-1), name="Soil")
 
@@ -143,7 +141,7 @@ class HybridEcosystem:
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
-
+        print(niche_fitness)
         # --- B. NEW UPTAKE LOGIC ---
         # Desired growth = fitness * growth_rate * mass
         desired_growth = niche_fitness * self.growth_rate * mass
