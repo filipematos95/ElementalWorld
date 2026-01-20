@@ -419,6 +419,14 @@ class HybridEcosystem:
         # If dist = 1.0, we are on the 'surface' of the niche ellipsoid.
         dist_from_center_norm = tf.norm(normalized_deviation, axis=1) # [N]
 
+
+        # --- DEBUG INSIDE FUNCTION ---
+        tf.print("\n[INSIDE FITNESS]")
+        tf.print("Tol[0]:", tolerance[0])
+        tf.print("NormDev[0]:", normalized_deviation[0])
+        tf.print("Dist[0]:", dist_from_center_norm[0])
+        # -----------------------------
+
         # 5. Calculate Fitness
         # 1.0 at center (dist=0), 0.0 at border (dist=1)
         niche_fitness = 1.0 - dist_from_center_norm
