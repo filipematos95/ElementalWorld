@@ -76,7 +76,7 @@ class HybridEcosystem:
 
         # Look up Species Niche Center to initialize stoichiometry
         center = self.niche_centers[species_id] # Shape (5,): [C, N, P, K, O]
-        raw = center[tf.newaxis, :] + tf.random.normal((count, 5), 0, 0.05)
+        raw = center[tf.newaxis, :] + tf.random.normal((count, 5), 0, 0.005)
         raw = tf.maximum(0.01, raw)
         stoich = raw / tf.reduce_sum(raw, axis=1, keepdims=True)
 
