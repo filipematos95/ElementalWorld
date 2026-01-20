@@ -141,7 +141,7 @@ class HybridEcosystem:
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
-        print("Niche Fitness:" + niche_fitness)
+        print("Niche Fitness:", niche_fitness)
         # --- B. NEW UPTAKE LOGIC ---
         # Desired growth = fitness * growth_rate * mass
         desired_growth = niche_fitness * self.growth_rate * mass
