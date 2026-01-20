@@ -131,7 +131,7 @@ class HybridEcosystem:
         input_ratio = tf.constant([0.2, 0.1, 0.05, 0.05], dtype=tf.float32)
         input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
 
-        # Add small consistent input (e.g. 0.008 total units per step)
+        # Add small consistent input
         inorg_new = inorg_diff + (input_ratio * 0.008)
 
         # ------------------------------------------
