@@ -395,45 +395,26 @@ class HybridEcosystem:
         return space_factor
 
     def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right):
-        """
-        Compute fitness using Euclidean distance in normalized niche space.
+        delta = elementome_vals - my_centers
+        tolerance = tf.where(delta < 0, my_left, my_right)
 
-        Fitness = 1 - || (elementome - center) / tolerance ||
-
-        Where 'tolerance' is chosen per-element (left or right) based on the sign of deviation.
-        """
-        # 1. Calculate signed deviation
-        delta = elementome_vals - my_centers  # [N, 5]
-
-        # 2. Select appropriate tolerance for each element (Left vs Right)
-        # If delta < 0 (deficit), use Left. If delta > 0 (excess), use Right.
-        tolerance = tf.where(delta < 0, my_left, my_right) # [N, 5]
-
-        # 3. Normalize the deviation by the tolerance
-        # A value of 1.0 means we are exactly at the border for that element.
-        # A value of 0.0 means we are at the center.
-        normalized_deviation = delta / (tolerance + 1e-9) # [N, 5]
-
-        # 4. Compute Euclidean distance of this normalized vector
-        # This represents "how far are we from center relative to the niche shape"
-        # If dist = 1.0, we are on the 'surface' of the niche ellipsoid.
-        dist_from_center_norm = tf.norm(normalized_deviation, axis=1) # [N]
-
-
-        # --- DEBUG INSIDE FUNCTION ---
-        tf.print("\n[INSIDE FITNESS]")
+        # DEBUG: Print exact values used for calculation
+        tf.print("\n--- DEEP DEBUG ---")
+        tf.print("Delta[0]:", delta[0])
         tf.print("Tol[0]:", tolerance[0])
+
+        normalized_deviation = delta / (tolerance + 1e-9)
         tf.print("NormDev[0]:", normalized_deviation[0])
-        tf.print("Dist[0]:", dist_from_center_norm[0])
-        # -----------------------------
 
-        # 5. Calculate Fitness
-        # 1.0 at center (dist=0), 0.0 at border (dist=1)
-        niche_fitness = 1.0 - dist_from_center_norm
+        sq = tf.square(normalized_deviation)
+        tf.print("Squared[0]:", sq[0])
 
-        # Clip to ensure valid range [0, 1]
-        niche_fitness = tf.clip_by_value(niche_fitness, 0.0, 1.0)
+        ss = tf.reduce_sum(sq, axis=1)
+        tf.print("SumSq[0]:", ss[0])
 
-        tf.print("Dist Norm (first 3):", dist_from_center_norm[:3])
+        dist = tf.sqrt(ss)
+        tf.print("CalcDist[0]:", dist[0])
+        # -------------------------------
 
-        return niche_fitness
+        niche_fitness = 1.0 - dist
+        return tf.clip_by_value(niche_fitness, 0.0, 1.0)
