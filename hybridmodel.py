@@ -43,7 +43,7 @@ class HybridEcosystem:
 
         # Pool size varies spatially (some areas richer than others)
         pool_size = tf.random.normal((self.H, self.W, 1), mean=soil_pool_mean, stddev=soil_pool_std)
-        pool_size = tf.maximum(0.1, pool_size)  # Minimum pool
+        pool_size = tf.maximum(0.5, pool_size)  # Minimum pool
 
         # Final inorganic concentrations = ratio × pool
         init_inorg = init_inorg_ratio * pool_size
