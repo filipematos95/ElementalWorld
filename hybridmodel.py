@@ -38,7 +38,7 @@ class HybridEcosystem:
         base_tiled = tf.tile(base_tiled, [self.H, self.W, 1])
 
         ratio_raw = base_tiled + noise
-        ratio_raw = tf.maximum(0.01, ratio_raw)  # Prevent negatives
+        ratio_raw = tf.maximum(0.0001, ratio_raw)  # Prevent negatives
         init_inorg_ratio = ratio_raw / tf.reduce_sum(ratio_raw, axis=2, keepdims=True)  # Normalize to sum=1
 
         # Pool size varies spatially (some areas richer than others)
