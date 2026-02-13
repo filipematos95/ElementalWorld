@@ -3,7 +3,7 @@ import numpy as np
 
 class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right, growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
-                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01,soil_ratio_noise=0.05):
+                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01,soil_ratio_noise=0.05, soil_input_rate=0.2):
         """
         Initialize the Ecosystem.
 
@@ -26,7 +26,7 @@ class HybridEcosystem:
         # --- 1. SOIL SYSTEM (8 Channels) ---
         # [0:4] Inorganic N, P, K, O (Available)
         # [4:8] Organic   N, P, K, O (Litter/Locked)
-
+        self.soil_input_rate = soil_input_rate
         # Base ratio (same across all pixels, with small variation)
         if soil_base_ratio is None:
             soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
@@ -134,7 +134,7 @@ class HybridEcosystem:
         input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
 
         # Add small consistent input
-        inorg_new = inorg_diff + (input_ratio * 0.2)
+        inorg_new = inorg_diff + (input_ratio * self.soil_input_rate)
 
         # ------------------------------------------
         # PHASE 2: AGENT BIOLOGY
