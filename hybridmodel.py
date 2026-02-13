@@ -403,6 +403,19 @@ class HybridEcosystem:
             tf.print("DIAG -> No active agents")
 
         return self.n_agents
+    def get_species_biomass(self, species_id):
+        active_mask = (self.agents[:, 9] > 0.5) & (self.agents[:, 2] == float(species_id))
+        active_idx = tf.where(active_mask)
+        if tf.shape(active_idx)[0] == 0:
+            return np.zeros((self.H, self.W))
+
+        data = tf.gather_nd(self.agents, active_idx)
+        coords = tf.cast(data[:, 0:2], tf.int32)
+        mass = data[:, 3]
+
+        # We use tf.zeros here to create a fresh grid for just this species
+        grid = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, mass)
+        return grid.numpy()
 
     def get_species_grid(model):
     # Logic to return a grid where Pixel Value = Species ID
