@@ -404,6 +404,17 @@ class HybridEcosystem:
 
         return self.n_agents
 
+    def get_species_grid(model):
+    # Logic to return a grid where Pixel Value = Species ID
+        active_mask = model.agents[:, 9] > 0.5
+        data = tf.gather_nd(model.agents, tf.where(active_mask))
+        coords = tf.cast(data[:, 0:2], tf.int32)
+        spp = data[:, 2]
+
+        grid = np.zeros((model.H, model.W))
+        # Note: If multiple species are on one pixel, this just shows one
+        grid[coords[:,0], coords[:,1]] = spp + 1 # +1 so Spp 0 isn't invisible
+        return grid
 
     def get_biomass_grid(self):
         active_mask = self.agents[:, 9] > 0.5
