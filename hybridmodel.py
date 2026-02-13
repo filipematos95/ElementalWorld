@@ -134,7 +134,7 @@ class HybridEcosystem:
         input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
 
         # Add small consistent input
-        inorg_new = inorg_diff + (input_ratio * 0.008)
+        inorg_new = inorg_diff + (input_ratio * 0.2)
 
         # ------------------------------------------
         # PHASE 2: AGENT BIOLOGY
