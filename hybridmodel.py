@@ -229,7 +229,7 @@ class HybridEcosystem:
         # --- C. GROWTH (Quota + Space + Niche) ---
         # New mass after growth
         # --- C. GROWTH (Quota + Space + Niche) ---
-        MIN_QUOTA = 0.05
+        MIN_QUOTA = 0.01
 
         # Quotas should be computed relative to CURRENT biomass (no dilution by growth that didn't happen)
         Q_C = pool_C / (mass + 1e-9)
