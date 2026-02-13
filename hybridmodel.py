@@ -67,6 +67,7 @@ class HybridEcosystem:
         self.seed_cost           = seed_cost
         self.seed_mass           = seed_mass
         self.K_biomass           = K_biomass
+
     def add_initial_seeds(self, count=50, species_id=0):
 
         y = tf.random.uniform((count,), 0, self.H)
@@ -75,7 +76,7 @@ class HybridEcosystem:
         mass = tf.ones((count,)) * 0.1
         center = self.niche_centers[species_id] # Shape (5,)
 
-    # --- BETTER INITIALIZATION ---
+        # --- BETTER INITIALIZATION ---
         # 1. Proportional Noise (10%) to keep relative ratios sane
         # This works better than additive noise for trace elements (like K=0.05)
         noise_scale = 0.1
@@ -129,7 +130,7 @@ class HybridEcosystem:
         inorg_diff = tf.nn.depthwise_conv2d(inorg_padded, self.diff_kernel, [1,1,1,1], "VALID")[0]
 
         # External Input (rain/deposition) matching the species niche to prevent drift
-        input_ratio = tf.constant([0.2, 0.1, 0.05, 0.05], dtype=tf.float32)
+        input_ratio = tf.constant([0.25, 0.15, 0.05, 0.05], dtype=tf.float32)
         input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
 
         # Add small consistent input
@@ -185,7 +186,7 @@ class HybridEcosystem:
 
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
 
-       # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
+        # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
         # --- B. NEW UPTAKE LOGIC ---
         # Desired growth = fitness * growth_rate * mass
@@ -364,7 +365,7 @@ class HybridEcosystem:
         self.agents.assign(new_tensor_state)
         self.n_agents.assign(new_count)
 
-# Spawn Seeds
+        # Spawn Seeds
         p_idx = tf.where(parents)[:, 0]
         n_s = tf.shape(p_idx)[0]
         if n_s > 0:
