@@ -169,23 +169,14 @@ class HybridEcosystem:
         my_left    = tf.gather(self.niche_left,    spp_ids)
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
-
-        #if tf.shape(spp_ids)[0] > 0:
-        #   tf.print("\n--- FITNESS DEBUG ---")
-        #    tf.print("Agent 0 Elementome:", curr_elementome[0])
-        #    tf.print("Agent 0 Center:    ", my_centers[0])
-        #    tf.print("Agent 0 Tolerances:", my_left[0]) # Assuming symmetric for quick check
-
-        #    diff = curr_elementome[0] - my_centers[0]
-        #    tf.print("Difference:        ", diff)
-
-        #    # Check the normalization shift
-        #    tf.print("Sum of Center:     ", tf.reduce_sum(my_centers[0]))
-        #    tf.print("Sum of Agent:      ", tf.reduce_sum(curr_elementome[0]))
-
-
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
-
+        for s in [0, 1]:
+            mask = (spp_ids == s)
+            if tf.reduce_any(mask):
+                tf.print("Spp", s,
+                         "fit:", tf.reduce_mean(niche_fitness[mask]),
+                         "grow:", tf.reduce_mean(actual_growth[mask]),
+                         "resp:", tf.reduce_mean(maint[mask]))
         # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
         # --- B. NEW UPTAKE LOGIC ---
@@ -403,6 +394,8 @@ class HybridEcosystem:
             tf.print("DIAG -> No active agents")
 
         return self.n_agents
+
+
     def get_species_biomass(self, species_id):
         active_mask = (self.agents[:, 9] > 0.5) & (self.agents[:, 2] == float(species_id))
         active_idx = tf.where(active_mask)
@@ -418,7 +411,7 @@ class HybridEcosystem:
         return grid.numpy()
 
     def get_species_grid(model):
-    # Logic to return a grid where Pixel Value = Species ID
+        # Logic to return a grid where Pixel Value = Species ID
         active_mask = model.agents[:, 9] > 0.5
         data = tf.gather_nd(model.agents, tf.where(active_mask))
         coords = tf.cast(data[:, 0:2], tf.int32)
@@ -475,12 +468,12 @@ class HybridEcosystem:
 
         ss = tf.reduce_sum(sq, axis=1)
         #tf.print("SumSq[0]:", ss[0])
-
-        dist = tf.sqrt(ss)
+        niche_fitness = tf.exp(-0.5 * ss)
+        #dist = tf.sqrt(ss)
         #tf.print("CalcDist[0]:", dist[0])
         # -------------------------------
 
-        niche_fitness = 1.0 - dist
+        # niche_fitness = 1.0 - dist
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
     def update_grid(self):
