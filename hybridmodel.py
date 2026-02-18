@@ -118,7 +118,7 @@ class HybridEcosystem:
         print(f"Added {count} seeds of Spp {species_id}.")
 
     @tf.function
-    def step(self):
+    def step(self, fitness_metric):
         # ------------------------------------------
         # PHASE 1: SOIL PHYSICS
         # ------------------------------------------
@@ -170,7 +170,7 @@ class HybridEcosystem:
         my_left    = tf.gather(self.niche_left,    spp_ids)
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
-        niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
+        niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right, fitness_metric)
 
         # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
