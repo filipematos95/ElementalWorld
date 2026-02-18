@@ -29,8 +29,9 @@ class HybridEcosystem:
         self.soil_input_rate = soil_input_rate
         # Base ratio (same across all pixels, with small variation)
         if soil_base_ratio is None:
-            soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
-
+            self.soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
+        else:
+            self.soil_base_ratio = soil_base_ratio
         # Create spatial variation: small perturbations around base ratio
         # Shape: (H, W, 4)
         noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
@@ -130,7 +131,7 @@ class HybridEcosystem:
         inorg_diff = tf.nn.depthwise_conv2d(inorg_padded, self.diff_kernel, [1,1,1,1], "VALID")[0]
 
         # External Input (rain/deposition) matching the species niche to prevent drift
-        input_ratio = tf.constant([0.25, 0.15, 0.05, 0.05], dtype=tf.float32)
+        input_ratio = tf.constant(self.soil_base_ratio, dtype=tf.float32)
         input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
 
         # Add small consistent input
