@@ -170,13 +170,7 @@ class HybridEcosystem:
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
         niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right)
-        for s in [0, 1]:
-            mask = (spp_ids == s)
-            if tf.reduce_any(mask):
-                tf.print("Spp", s,
-                         "fit:", tf.reduce_mean(niche_fitness[mask]),
-                         "grow:", tf.reduce_mean(actual_growth[mask]),
-                         "resp:", tf.reduce_mean(maint[mask]))
+
         # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
         # --- B. NEW UPTAKE LOGIC ---
@@ -249,6 +243,13 @@ class HybridEcosystem:
 
         alive = tf.cast(fin_mass > 0.01, tf.float32)
 
+        for s in [0, 1]:
+            mask = (spp_ids == s)
+            if tf.reduce_any(mask):
+                tf.print("Spp", s,
+                         "fit:", tf.reduce_mean(niche_fitness[mask]),
+                         "grow:", tf.reduce_mean(actual_growth[mask]),
+                         "resp:", tf.reduce_mean(maint[mask]))
         # --- D. RECYCLING ---
         # Prevent negative masses from creating negative 'dead' fluxes
         fin_mass_pos = tf.maximum(0.0, fin_mass)
@@ -451,29 +452,29 @@ class HybridEcosystem:
         space_factor = np.maximum(0.0, 1.0 - (grid_mass / self.K_biomass))
         return space_factor
 
-    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right):
+    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='chebyshev'):
         delta = elementome_vals - my_centers
         tolerance = tf.where(delta < 0, my_left, my_right)
 
-        # DEBUG: Print exact values used for calculation
-        #tf.print("\n--- DEEP DEBUG ---")
-        #tf.print("Delta[0]:", delta[0])
-        #tf.print("Tol[0]:", tolerance[0])
+        # 1. Normalize
+        normalized_deviation = tf.abs(delta) / (tolerance + 1e-9)
 
-        normalized_deviation = delta / (tolerance + 1e-9)
-        #tf.print("NormDev[0]:", normalized_deviation[0])
+        if metric == "euclidean":
+            # This tf.print will run every step!
+            tf.print("--- Metric: Euclidean ---")
 
-        sq = tf.square(normalized_deviation)
-        #tf.print("Squared[0]:", sq[0])
+            sq = tf.square(normalized_deviation)
+            ss = tf.reduce_sum(sq, axis=1)
+            niche_fitness = tf.exp(-0.5 * ss)
 
-        ss = tf.reduce_sum(sq, axis=1)
-        #tf.print("SumSq[0]:", ss[0])
-        niche_fitness = tf.exp(-0.5 * ss)
-        #dist = tf.sqrt(ss)
-        #tf.print("CalcDist[0]:", dist[0])
-        # -------------------------------
+        elif metric == 'chebyshev':
+            # This tf.print will run every step!
+            tf.print("--- Metric: Chebyshev ---")
 
-        # niche_fitness = 1.0 - dist
+            max_dev = tf.reduce_max(normalized_deviation, axis=1)
+            max_sq  = tf.square(max_dev)
+            niche_fitness = tf.exp(-2.3 * max_sq)
+
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
     def update_grid(self):
