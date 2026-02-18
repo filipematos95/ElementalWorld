@@ -453,7 +453,7 @@ class HybridEcosystem:
         space_factor = np.maximum(0.0, 1.0 - (grid_mass / self.K_biomass))
         return space_factor
 
-    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='euclidean'):
+    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='chebyshev'):
         delta = elementome_vals - my_centers
         tolerance = tf.where(delta < 0, my_left, my_right)
 
@@ -475,6 +475,10 @@ class HybridEcosystem:
             max_dev = tf.reduce_max(normalized_deviation, axis=1)
             max_sq  = tf.square(max_dev)
             niche_fitness = tf.exp(-2.3 * max_sq)
+        else:
+            sq = tf.square(normalized_deviation)
+            ss = tf.reduce_sum(sq, axis=1)
+            niche_fitness = tf.exp(-0.5 * ss)
 
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
