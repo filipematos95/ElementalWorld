@@ -243,8 +243,9 @@ class HybridEcosystem:
         fin_mass = mass + realized_growth - maint
 
         alive = tf.cast(fin_mass > 0.01, tf.float32)
+        self.N_spp = self.niche_centers.shape[0]
 
-        for s in [0, 1]:
+        for s in self.N_spp:
             mask = (spp_ids == s)
             if tf.reduce_any(mask):
                 tf.print("Spp", s,
@@ -436,6 +437,33 @@ class HybridEcosystem:
         grid = tf.tensor_scatter_nd_add(grid, coords, mass)
         return grid.numpy()
 
+    def get_species_biomass_grid(self, species_id):
+        """
+        Returns a (H, W) grid containing biomass ONLY for the specified species_id.
+        """
+        # 1. Check for Active Agents AND Correct Species
+        # Column 9 is 'alive', Column 2 is 'species_id'
+        is_alive = self.agents[:, 9] > 0.5
+        is_species = tf.abs(self.agents[:, 2] - float(species_id)) < 0.1 # float comparison safety
+
+        active_mask = tf.logical_and(is_alive, is_species)
+        active_idx = tf.where(active_mask)
+
+        # 2. Safety Check: If no agents of this species exist, return empty grid
+        if tf.shape(active_idx)[0] == 0:
+            return np.zeros((self.H, self.W), dtype=np.float32)
+
+        # 3. Gather Data
+        data = tf.gather_nd(self.agents, active_idx)
+        coords = tf.cast(data[:, 0:2], tf.int32)
+        mass = data[:, 3]
+
+        # 4. Scatter onto Grid
+        grid = tf.zeros((self.H, self.W), dtype=tf.float32)
+        grid = tf.tensor_scatter_nd_add(grid, coords, mass)
+
+        return grid.numpy()
+
     def get_element_pools(self):
         active_mask = self.agents[:, 9] > 0.5
         idx = tf.where(active_mask)
@@ -504,13 +532,3 @@ class HybridEcosystem:
             niche_fitness = tf.exp(-0.5 * ss)
 
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
-
-    def update_grid(self):
-        # 1. Reset the grid to 0 (so we don't double-count old positions)
-        self.biomass_grid = np.zeros((self.height, self.width))
-
-        # 2. Loop through every agent and "paint" them
-        for agent in self.agents:
-            x, y = agent.position
-            # Add agent's biomass to that pixel
-            self.biomass_grid[y, x] += agent.biomass
