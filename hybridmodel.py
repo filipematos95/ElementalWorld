@@ -22,6 +22,7 @@ class HybridEcosystem:
         self.niche_centers = tf.constant(niche_centers, dtype=tf.float32, name="Niche_Centers")
         self.niche_left    = tf.constant(niche_left,    dtype=tf.float32, name="Niche_Left")
         self.niche_right   = tf.constant(niche_right,   dtype=tf.float32, name="Niche_Right")
+        self.N_spp = self.niche_centers.shape[0]
 
         # --- 1. SOIL SYSTEM (8 Channels) ---
         # [0:4] Inorganic N, P, K, O (Available)
@@ -243,7 +244,6 @@ class HybridEcosystem:
         fin_mass = mass + realized_growth - maint
 
         alive = tf.cast(fin_mass > 0.01, tf.float32)
-        self.N_spp = self.niche_centers.shape[0]
 
         for s in self.N_spp:
             mask = (spp_ids == s)
