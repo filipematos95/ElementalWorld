@@ -475,6 +475,29 @@ class HybridEcosystem:
             max_dev = tf.reduce_max(normalized_deviation, axis=1)
             max_sq  = tf.square(max_dev)
             niche_fitness = tf.exp(-2.3 * max_sq)
+        elif metric == "cosine":
+            # 1. Determine Asymmetric Tolerances
+            # (You already calculate this at the top of the function)
+            # delta = elementome_vals - my_centers
+            # tolerance = tf.where(delta < 0, my_left, my_right)
+
+            # 2. Calculate Dynamic Weights
+            # If I have too little N, use Left Tolerance.
+            # If I have too much N, use Right Tolerance.
+            weights = 1.0 / (tf.square(tolerance) + 1e-9)
+
+            # 3. Weighted Dot Product (Numerator)
+            numerator = tf.reduce_sum(weights * elementome_vals * my_centers, axis=1)
+
+            # 4. Weighted Norms (Denominator)
+            norm_agent  = tf.sqrt(tf.reduce_sum(weights * tf.square(elementome_vals), axis=1))
+            norm_center = tf.sqrt(tf.reduce_sum(weights * tf.square(my_centers), axis=1))
+
+            # 5. Result
+            similarity = numerator / (norm_agent * norm_center + 1e-9)
+
+            # Sharpen
+            niche_fitness = tf.pow(tf.maximum(0.0, similarity), 20.0)
         else:
             sq = tf.square(normalized_deviation)
             ss = tf.reduce_sum(sq, axis=1)
