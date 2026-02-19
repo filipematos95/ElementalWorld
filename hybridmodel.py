@@ -245,7 +245,7 @@ class HybridEcosystem:
 
         alive = tf.cast(fin_mass > 0.01, tf.float32)
 
-        for s in self.N_spp:
+        for s in range(self.N_spp):
             mask = (spp_ids == s)
             if tf.reduce_any(mask):
                 tf.print("Spp", s,
