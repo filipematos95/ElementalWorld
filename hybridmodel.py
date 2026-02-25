@@ -494,7 +494,7 @@ class HybridEcosystem:
 
             sq = tf.square(normalized_deviation)
             ss = tf.reduce_sum(sq, axis=1)
-            niche_fitness = tf.exp(-0.5 * ss)
+            niche_fitness = tf.exp(-0.5 * ss / 40**2)
 
         elif metric == 'chebyshev':
             # This tf.print will run every step!
@@ -502,7 +502,8 @@ class HybridEcosystem:
 
             max_dev = tf.reduce_max(normalized_deviation, axis=1)
             max_sq  = tf.square(max_dev)
-            niche_fitness = tf.exp(-2.3 * max_sq)
+            niche_fitness = tf.exp(-2.3 * max_sq / 3**2)
+
         elif metric == "cosine":
             # 1. Determine Asymmetric Tolerances
             # (You already calculate this at the top of the function)
@@ -526,6 +527,39 @@ class HybridEcosystem:
 
             # Sharpen
             niche_fitness = tf.pow(tf.maximum(0.0, similarity), 20.0)
+
+        elif metric == 'aitchon':
+            def clr_transform(x):
+                # Geometric mean across elements (axis=1)
+                gm = tf.reduce_prod(x, axis=1, keepdims=True)**(1.0/5.0)
+                return tf.math.log(x / (gm + 1e-12))
+
+            clr_agent = clr_transform(elementome_vals)
+            clr_center = clr_transform(my_centers)
+
+            # Step 2: Euclidean on CLR space
+            delta_clr = clr_agent - clr_center
+            sq_dist = tf.reduce_sum(tf.square(delta_clr), axis=1)
+
+            # Step 3: Fitness (Gaussian)
+            fitness = tf.exp(-0.5 * sq_dist / (10**2))
+
+        elif metric == "mahalanobis":
+            # MAHALANOBIS: Gather species-specific inverse covariance
+            spp_ids = tf.cast(self.agents[:, 2], tf.int32)  # Get from global agents? Wait...
+
+            # Get inverse covariance for each agent's species
+            inv_cov = tf.gather(self.tolerance_inv, spp_ids)  # (n_agents, 5, 5)
+
+            # Mahalanobis: delta^T * inv_cov * delta
+            # 1. delta * inv_cov (matrix-vector multiply)
+            delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)
+
+            # 2. delta^T * (delta * inv_cov)
+            mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)  # (n_agents,)
+
+            # 3. Fitness curve
+            niche_fitness = tf.exp(-0.5 * mahal_sq / (4**2))
         else:
             sq = tf.square(normalized_deviation)
             ss = tf.reduce_sum(sq, axis=1)
