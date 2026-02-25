@@ -542,7 +542,7 @@ class HybridEcosystem:
             sq_dist = tf.reduce_sum(tf.square(delta_clr), axis=1)
 
             # Step 3: Fitness (Gaussian)
-            fitness = tf.exp(-0.5 * sq_dist / (10**2))
+            niche_fitness = tf.exp(-0.5 * sq_dist / (10**2))
 
         elif metric == "mahalanobis":
             # MAHALANOBIS: Gather species-specific inverse covariance
