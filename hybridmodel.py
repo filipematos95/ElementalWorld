@@ -167,6 +167,8 @@ class HybridEcosystem:
             return self.n_agents
 
         active_data = tf.gather_nd(self.agents, active_idx)
+        spp_ids = tf.cast(active_data[:, 2], tf.int32)
+
         coords = tf.cast(active_data[:, 0:2], tf.int32)
         spp_ids = tf.cast(active_data[:, 2], tf.int32)
         mass   = active_data[:, 3]
@@ -187,7 +189,7 @@ class HybridEcosystem:
         my_left    = tf.gather(self.niche_left,    spp_ids)
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
-        niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right, fitness_metric)
+        niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right, fitness_metric, spp_ids = spp_ids)
 
         # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
@@ -497,7 +499,8 @@ class HybridEcosystem:
         space_factor = np.maximum(0.0, 1.0 - (grid_mass / self.K_biomass))
         return space_factor
 
-    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='chebyshev'):
+    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='chebyshev', spp_ids=None):
+        n_agents = tf.shape(elementome_vals)[0]
         delta = elementome_vals - my_centers
         tolerance = tf.where(delta < 0, my_left, my_right)
 
@@ -561,21 +564,23 @@ class HybridEcosystem:
             niche_fitness = tf.exp(-0.5 * sq_dist / (10**2))
 
         elif metric == "mahalanobis":
-            # MAHALANOBIS: Gather species-specific inverse covariance
-            spp_ids = tf.cast(self.agents[:, 2], tf.int32)  # Get from global agents? Wait...
+            tf.print("--- Metric: MAHALANOBIS ---")
 
-            # Get inverse covariance for each agent's species
-            inv_cov = tf.gather(self.tolerance_inv, spp_ids)  # (n_agents, 5, 5)
+            if spp_ids is None or tf.shape(spp_ids)[0] != n_agents:
+                tf.print("WARNING: No spp_ids, using species 0 covariance")
+                inv_cov = self.tolerance_inv[0:1]  # Fallback
+            else:
+                # FIXED: Gather correct shape (n_agents, 5, 5)
+                inv_cov = tf.gather(self.tolerance_inv, spp_ids)  # ✓ (n_agents, 5, 5)
 
-            # Mahalanobis: delta^T * inv_cov * delta
-            # 1. delta * inv_cov (matrix-vector multiply)
-            delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)
+            # Mahalanobis distance: δᵀ Σ⁻¹ δ
+            # Step 1: δ × Σ⁻¹  → (n_agents, 5)
+            delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)  # FIXED einsum!
 
-            # 2. delta^T * (delta * inv_cov)
-            mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)  # (n_agents,)
+            # Step 2: δᵀ × (δ × Σ⁻¹) → (n_agents,)
+            mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)
 
-            # 3. Fitness curve
-            niche_fitness = tf.exp(-0.5 * mahal_sq / (4**2))
+            niche_fitness = tf.exp(-0.5 * mahal_sq / 4**2)
         else:
             sq = tf.square(normalized_deviation)
             ss = tf.reduce_sum(sq, axis=1)
