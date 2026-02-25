@@ -23,7 +23,23 @@ class HybridEcosystem:
         self.niche_left    = tf.constant(niche_left,    dtype=tf.float32, name="Niche_Left")
         self.niche_right   = tf.constant(niche_right,   dtype=tf.float32, name="Niche_Right")
         self.N_spp = self.niche_centers.shape[0]
+        self.tolerance_cov = []
+        self.tolerance_inv = []
 
+        for s in range(self.N_spp):
+            # Convert asymmetric tolerances → symmetric std devs
+            tol_std = 0.5 * (self.niche_left[s] + self.niche_right[s])  # Average tolerance
+
+            # Diagonal covariance matrix Σ (variance per element)
+            cov_matrix = tf.linalg.diag(tf.square(tol_std + 1e-6))  # +epsilon for stability
+            inv_matrix = tf.linalg.inv(cov_matrix)
+
+            self.tolerance_cov.append(cov_matrix)
+            self.tolerance_inv.append(inv_matrix)
+
+        # Stack for tf.gather() access: (N_spp, 5, 5)
+        self.tolerance_cov = tf.stack(self.tolerance_cov)
+        self.tolerance_inv = tf.stack(self.tolerance_inv)
         # --- 1. SOIL SYSTEM (8 Channels) ---
         # [0:4] Inorganic N, P, K, O (Available)
         # [4:8] Organic   N, P, K, O (Litter/Locked)
