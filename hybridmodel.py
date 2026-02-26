@@ -564,8 +564,6 @@ class HybridEcosystem:
             niche_fitness = tf.exp(-0.5 * sq_dist / (10**2))
 
         elif metric == "mahalanobis":
-            tf.print("--- Metric: MAHALANOBIS ---")
-
             if spp_ids is None or tf.shape(spp_ids)[0] != n_agents:
                 tf.print("WARNING: No spp_ids, using species 0 covariance")
                 inv_cov = self.tolerance_inv[0:1]  # Fallback
