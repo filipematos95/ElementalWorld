@@ -2,8 +2,10 @@ import tensorflow as tf
 import numpy as np
 
 class HybridEcosystem:
-    def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right, growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
-                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05, K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01,soil_ratio_noise=0.05, soil_input_rate=0.2):
+    def __init__(self, height, width, max_agents, niche_centers, niche_left, niche_right, growth_rate=0.7,
+                 respiration_rate=0.02, turnover_rate=0.02, mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
+                 K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01,soil_ratio_noise=0.05,
+                 soil_input_rate=0.2, soil_availability_rate=[1.0, 1.0, 1.0, 1.0]):
         """
         Initialize the Ecosystem.
 
@@ -25,6 +27,7 @@ class HybridEcosystem:
         self.N_spp = self.niche_centers.shape[0]
         self.tolerance_cov = []
         self.tolerance_inv = []
+        self.soil_availability_rate = tf.constant(soil_availability_rate, dtype=tf.float32)
 
         for s in range(self.N_spp):
             # Convert asymmetric tolerances → symmetric std devs
@@ -153,6 +156,7 @@ class HybridEcosystem:
 
         # Add small consistent input
         inorg_new = inorg_diff + (input_ratio * self.soil_input_rate)
+        inorg_available = inorg_new * self.soil_availability_rate
 
         # ------------------------------------------
         # PHASE 2: AGENT BIOLOGY
@@ -163,7 +167,7 @@ class HybridEcosystem:
         # Early exit
         if tf.shape(active_idx)[0] == 0:
             flux = org * self.mineralization_rate
-            self.soil.assign(tf.concat([inorg_new + flux, org - flux], axis=-1))
+            self.soil.assign(tf.concat([inorg_new  + flux, org - flux], axis=-1))
             return self.n_agents
 
         active_data = tf.gather_nd(self.agents, active_idx)
@@ -202,13 +206,12 @@ class HybridEcosystem:
 
         # STEP 2: Remaining biomass to fill from soil at soil ratio
         remaining = desired_growth - c_uptake
+        my_niche_pref = tf.gather(self.niche_centers[:, 1:], spp_ids)  # Take [N, P, K, O] channels only
+        niche_sum = tf.reduce_sum(my_niche_pref, axis=1, keepdims=True) + 1e-9
+        niche_norm = my_niche_pref / niche_sum
 
-        soil_ratio_npko = tf.gather_nd(inorg_new, coords)  # [N,P,K,O]
-        soil_sum = tf.reduce_sum(soil_ratio_npko, axis=1, keepdims=True) + 1e-9
-        soil_ratio_norm = soil_ratio_npko / soil_sum
-
-        desired_npko = remaining[:, tf.newaxis] * soil_ratio_norm
-        available_npko = tf.gather_nd(inorg_new, coords)
+        desired_npko = remaining[:, tf.newaxis] * niche_norm
+        available_npko = tf.gather_nd(inorg_available, coords)
 
         can_grow = tf.reduce_all(available_npko >= desired_npko, axis=1)
 
