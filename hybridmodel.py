@@ -587,7 +587,7 @@ class HybridEcosystem:
             # Step 2: δᵀ × (δ × Σ⁻¹) → (n_agents,)
             mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)
 
-            niche_fitness = tf.exp(-0.5 * mahal_sq / 4**2)
+            niche_fitness = tf.exp(-0.5 * mahal_sq / 1.5**2)
         else:
             sq = tf.square(normalized_deviation)
             ss = tf.reduce_sum(sq, axis=1)
