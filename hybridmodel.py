@@ -202,10 +202,10 @@ class HybridEcosystem:
         desired_growth = niche_fitness * self.growth_rate * mass
 
         # STEP 1: Carbon from atmosphere (unlimited) — but only if growth actually happens
-        c_uptake = desired_growth * curr_C
+        c_uptake_potential = desired_growth * curr_C
 
         # STEP 2: Remaining biomass to fill from soil at soil ratio
-        remaining = desired_growth - c_uptake
+        remaining = desired_growth - c_uptake_potential
         my_niche_pref = tf.gather(self.niche_centers[:, 1:], spp_ids)  # Take [N, P, K, O] channels only
         niche_sum = tf.reduce_sum(my_niche_pref, axis=1, keepdims=True) + 1e-9
         niche_norm = my_niche_pref / niche_sum
@@ -213,22 +213,28 @@ class HybridEcosystem:
         desired_npko = remaining[:, tf.newaxis] * niche_norm
         available_npko = tf.gather_nd(inorg_available, coords)
 
-        can_grow = tf.reduce_all(available_npko >= desired_npko, axis=1)
 
-        # Gate ALL uptake (including C) on can_grow
-        actual_growth = tf.where(can_grow, desired_growth, 0.0)
-        c_uptake      = tf.where(can_grow, c_uptake, 0.0)
+        K_m = 0.1
+        uptake_limit_N = available_npko[:,0] / (available_npko[:,0] + K_m)
+        uptake_limit_P = available_npko[:,1] / (available_npko[:,1] + K_m)
+        uptake_limit_K = available_npko[:,2] / (available_npko[:,2] + K_m)
+        uptake_limit_O = available_npko[:,3] / (available_npko[:,3] + K_m)
 
-        up_N = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 0:1], 0.0)
-        up_P = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 1:2], 0.0)
-        up_K = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 2:3], 0.0)
-        up_O = tf.where(can_grow[:, tf.newaxis], desired_npko[:, 3:4], 0.0)
+        # Most limiting nutrient scales ALL uptake
+        nutrient_limits = tf.stack([uptake_limit_N, uptake_limit_P, uptake_limit_K, uptake_limit_O], axis=1)
+        nutrient_limit = tf.reduce_min(nutrient_limits, axis=1)
+        scale_factor = nutrient_limit[:, tf.newaxis]
 
-        # Actual growth (only if can_grow)
-        actual_growth = tf.where(can_grow, desired_growth, 0.0)
+        # Apply scaling to desired quantities
+        actual_growth = desired_growth * nutrient_limit
+        c_uptake = c_uptake_potential * nutrient_limit
+        up_N = desired_npko[:, 0:1] * scale_factor
+        up_P = desired_npko[:, 1:2] * scale_factor
+        up_K = desired_npko[:, 2:3] * scale_factor
+        up_O = desired_npko[:, 3:4] * scale_factor
 
-        # Update pools (C from atmosphere, N/P/K/O from uptake)
-        pool_C = (mass * curr_C) + c_uptake  # C always uptaken
+        # Update pools (unchanged)
+        pool_C = (mass * curr_C) + c_uptake
         pool_N = (mass * curr_N) + up_N[:, 0]
         pool_P = (mass * curr_P) + up_P[:, 0]
         pool_K = (mass * curr_K) + up_K[:, 0]
