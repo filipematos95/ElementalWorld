@@ -194,7 +194,7 @@ class HybridEcosystem:
         my_left    = tf.gather(self.niche_left,    spp_ids)
         my_right   = tf.gather(self.niche_right,   spp_ids)
 
-        niche_fitness = self._compute_niche_fitness(curr_elementome, my_centers, my_left, my_right, fitness_metric, spp_ids = spp_ids)
+        niche_fitness = self.b(curr_elementome, my_centers, my_left, my_right, fitness_metric, spp_ids = spp_ids)
 
         # tf.print("Fitness Stats -> Min:", tf.reduce_min(niche_fitness),"Mean:", tf.reduce_mean(niche_fitness),"Max:", tf.reduce_max(niche_fitness))
 
@@ -509,89 +509,115 @@ class HybridEcosystem:
         space_factor = np.maximum(0.0, 1.0 - (grid_mass / self.K_biomass))
         return space_factor
 
-    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='chebyshev', spp_ids=None):
+    def _compute_niche_fitness_mahalanobis(self, elementome_vals, my_centers, spp_ids):
         n_agents = tf.shape(elementome_vals)[0]
+
+        # 1. Raw Deviation
         delta = elementome_vals - my_centers
+
+        # 2. Gather the precomputed inverse covariance matrices (Sigma^-1)
+        # Shape: (n_agents, 5, 5)
+        if spp_ids is None or tf.shape(spp_ids)[0] != n_agents:
+            inv_cov = self.tolerance_inv[0:1]  # Fallback safety
+        else:
+            inv_cov = tf.gather(self.tolerance_inv, spp_ids)
+
+        # 3. Compute Mahalanobis Distance Squared (D^2)
+        # delta_weighted = delta * Sigma^-1
+        delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)
+
+        # D_M^2 = delta^T * (delta * Sigma^-1)
+        mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)
+
+        # 4. Raw Mahalanobis Distance (D_M)
+        # This value is literally the number of standard deviations (sigmas) from the center.
+        mahal_dist = tf.sqrt(mahal_sq)
+
+        # 5. Normalize against the 3-Sigma threshold
+        # If mahal_dist is 3.0, normalized_dist becomes 1.0 (The boundary)
+        SIGMA_THRESHOLD = 3.0
+        normalized_dist = mahal_dist / SIGMA_THRESHOLD
+
+        # 6. Parabolic Fitness Mapping
+        # Center (0 sigma) -> 1.0 - 0^2 = 1.0 fitness
+        # Boundary (3 sigma) -> 1.0 - 1.0^2 = 0.0 fitness
+        niche_fitness = 1.0 - tf.square(normalized_dist)
+
+        # Clip to ensure anything past 3-sigma is strictly 0.0
+        return tf.clip_by_value(niche_fitness, 0.0, 1.0)
+
+
+    def _compute_niche_fitness(self, elementome_vals, my_centers, my_left, my_right, metric='euclidean', spp_ids=None):
+            n_agents = tf.shape(elementome_vals)[0]
+
+        # ---------------------------------------------------------
+        # STEP 1: COMPUTE DISTANCE ACCORDING TO METRIC
+        # ---------------------------------------------------------
+        # Raw deviation from the ideal niche center
+        delta = elementome_vals - my_centers
+
+        # Apply asymmetric tolerances (left if deficient, right if in excess)
         tolerance = tf.where(delta < 0, my_left, my_right)
 
-        # 1. Normalize
+        # Normalize: A value of 0.0 is the center, 1.0 is exactly on the border
         normalized_deviation = tf.abs(delta) / (tolerance + 1e-9)
 
         if metric == "euclidean":
-            # This tf.print will run every step!
-            tf.print("--- Metric: Euclidean ---")
-
+            # Distance is the geometric average of all normalized deviations.
+            # If all elements are at their border (1.0), distance is 1.0.
             sq = tf.square(normalized_deviation)
-            ss = tf.reduce_sum(sq, axis=1)
-            niche_fitness = tf.exp(-0.5 * ss / 40**2)
-
-        elif metric == 'chebyshev':
-            # This tf.print will run every step!
-            tf.print("--- Metric: Chebyshev ---")
-
-            max_dev = tf.reduce_max(normalized_deviation, axis=1)
-            max_sq  = tf.square(max_dev)
-            niche_fitness = tf.exp(-2.3 * max_sq / 3**2)
-
-        elif metric == "cosine":
-            # 1. Determine Asymmetric Tolerances
-            # (You already calculate this at the top of the function)
-            # delta = elementome_vals - my_centers
-            # tolerance = tf.where(delta < 0, my_left, my_right)
-
-            # 2. Calculate Dynamic Weights
-            # If I have too little N, use Left Tolerance.
-            # If I have too much N, use Right Tolerance.
-            weights = 1.0 / (tf.square(tolerance) + 1e-9)
-
-            # 3. Weighted Dot Product (Numerator)
-            numerator = tf.reduce_sum(weights * elementome_vals * my_centers, axis=1)
-
-            # 4. Weighted Norms (Denominator)
-            norm_agent  = tf.sqrt(tf.reduce_sum(weights * tf.square(elementome_vals), axis=1))
-            norm_center = tf.sqrt(tf.reduce_sum(weights * tf.square(my_centers), axis=1))
-
-            # 5. Result
-            similarity = numerator / (norm_agent * norm_center + 1e-9)
-
-            # Sharpen
-            niche_fitness = tf.pow(tf.maximum(0.0, similarity), 20.0)
-
-        elif metric == 'aitchon':
-            def clr_transform(x):
-                # Geometric mean across elements (axis=1)
-                gm = tf.reduce_prod(x, axis=1, keepdims=True)**(1.0/5.0)
-                return tf.math.log(x / (gm + 1e-12))
-
-            clr_agent = clr_transform(elementome_vals)
-            clr_center = clr_transform(my_centers)
-
-            # Step 2: Euclidean on CLR space
-            delta_clr = clr_agent - clr_center
-            sq_dist = tf.reduce_sum(tf.square(delta_clr), axis=1)
-
-            # Step 3: Fitness (Gaussian)
-            niche_fitness = tf.exp(-0.5 * sq_dist / (10**2))
+            distance = tf.sqrt(tf.reduce_mean(sq, axis=1))
 
         elif metric == "mahalanobis":
+            # Handles covariances using your precomputed inverse matrices
             if spp_ids is None or tf.shape(spp_ids)[0] != n_agents:
-                tf.print("WARNING: No spp_ids, using species 0 covariance")
                 inv_cov = self.tolerance_inv[0:1]  # Fallback
             else:
-                # FIXED: Gather correct shape (n_agents, 5, 5)
-                inv_cov = tf.gather(self.tolerance_inv, spp_ids)  # ✓ (n_agents, 5, 5)
+                inv_cov = tf.gather(self.tolerance_inv, spp_ids)
 
-            # Mahalanobis distance: δᵀ Σ⁻¹ δ
-            # Step 1: δ × Σ⁻¹  → (n_agents, 5)
-            delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)  # FIXED einsum!
-
-            # Step 2: δᵀ × (δ × Σ⁻¹) → (n_agents,)
+            delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)
             mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)
 
-            niche_fitness = tf.exp(-0.5 * mahal_sq / 1.5**2)
-        else:
-            sq = tf.square(normalized_deviation)
-            ss = tf.reduce_sum(sq, axis=1)
-            niche_fitness = tf.exp(-0.5 * ss)
+            # mahal_sq naturally evaluates to ~5.0 when all 5 elements are exactly at their 1-sigma borders.
+            # We divide by 5.0 so that distance = 1.0 at the multivariate boundary.
+            distance = tf.sqrt(mahal_sq / 5.0)
 
+        elif metric == "cosine":
+            # Tolerance-Scaled Cosine: Checks if deficiencies/excesses are balanced
+            scaled_agent = delta / (tolerance + 1e-9)
+            abs_scaled_agent = tf.abs(scaled_agent)
+
+            # Compare against a "perfectly balanced" deviation [1,1,1,1,1]
+            ones_vector = tf.ones_like(abs_scaled_agent)
+
+            norm_agent = tf.sqrt(tf.reduce_sum(tf.square(abs_scaled_agent), axis=1))
+            norm_ones = tf.sqrt(tf.reduce_sum(tf.square(ones_vector), axis=1))
+
+            similarity = tf.reduce_sum(abs_scaled_agent * ones_vector, axis=1) / (norm_agent * norm_ones + 1e-9)
+
+            # Magnitude distance (how close to the border it is on average)
+            magnitude_dist = tf.sqrt(tf.reduce_mean(tf.square(scaled_agent), axis=1))
+
+            # Penalize magnitude if the element ratios are imbalanced
+            angular_penalty = 1.0 / (similarity + 1e-9)
+            distance = magnitude_dist * angular_penalty
+
+        else:
+            # Fallback to Euclidean
+            sq = tf.square(normalized_deviation)
+            distance = tf.sqrt(tf.reduce_mean(sq, axis=1))
+
+
+        # ---------------------------------------------------------
+        # STEP 2: COMPUTE STRICT FITNESS FROM DISTANCE
+        # ---------------------------------------------------------
+        # Distance mapping:
+        # 0.0 -> Perfect Center
+        # 1.0 -> Exactly on the tolerance boundary
+        # >1.0 -> Outside the boundary (Toxic/Starved)
+
+        # Parabolic decay: Stays higher near the center, drops to exactly 0 at distance 1.0
+        niche_fitness = 1.0 - tf.square(distance)
+
+        # Clip to [0, 1] to ensure anything outside the border is strictly dead (0.0)
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
