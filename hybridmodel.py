@@ -28,6 +28,7 @@ class HybridEcosystem:
         self.tolerance_cov = []
         self.tolerance_inv = []
         self.soil_availability_rate = tf.constant(soil_availability_rate, dtype=tf.float32)
+        self.soil_availability_rate = tf.reshape(self.soil_availability_rate, [1,1,4])
 
         for s in range(self.N_spp):
             # Convert asymmetric tolerances → symmetric std devs
@@ -440,14 +441,14 @@ class HybridEcosystem:
         grid = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, mass)
         return grid.numpy()
 
-    def get_species_grid(model):
+    def get_species_grid(self):
         # Logic to return a grid where Pixel Value = Species ID
-        active_mask = model.agents[:, 9] > 0.5
-        data = tf.gather_nd(model.agents, tf.where(active_mask))
+        active_mask = self.agents[:, 9] > 0.5
+        data = tf.gather_nd(self.agents, tf.where(active_mask))
         coords = tf.cast(data[:, 0:2], tf.int32)
         spp = data[:, 2]
 
-        grid = np.zeros((model.H, model.W))
+        grid = np.zeros((self.H, self.W))
         # Note: If multiple species are on one pixel, this just shows one
         grid[coords[:,0], coords[:,1]] = spp + 1 # +1 so Spp 0 isn't invisible
         return grid
