@@ -348,7 +348,7 @@ class HybridEcosystem:
                 )
                 self.n_agents.assign_add(safe)
 
-        if tf.shape(active_idx)[0] > 0:
+        #if tf.shape(active_idx)[0] > 0:
             #tf.print("DIAG -> Growth:", tf.reduce_mean(actual_growth),
             #         "Resp:", tf.reduce_mean(maint),
             #         "SpaceF:", tf.reduce_mean(space_f),
