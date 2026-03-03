@@ -412,3 +412,23 @@ class HybridEcosystem:
         niche_fitness = 1.0 - tf.square(normalized_dist)
 
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
+
+
+    def get_species_mean_fitness(self, species_id):
+        """Calculates the current average Mahalanobis fitness for a specific species."""
+        active_mask = (self.agents[:, 9] > 0.5) & (self.agents[:, 2] == float(species_id))
+        active_idx = tf.where(active_mask)
+
+        # If the species is extinct/not present, its fitness is 0
+        if tf.shape(active_idx)[0] == 0:
+            return 0.0
+
+        data = tf.gather_nd(self.agents, active_idx)
+        elementome = data[:, 4:9]
+        spp_ids = tf.cast(data[:, 2], tf.int32)
+        centers = tf.gather(self.niche_centers, spp_ids)
+
+        # Call the internal Mahalanobis function
+        fitness = self._compute_niche_fitness_mahalanobis(elementome, centers, spp_ids)
+
+        return float(tf.reduce_mean(fitness).numpy())
