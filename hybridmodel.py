@@ -228,11 +228,11 @@ class HybridEcosystem:
 
         for s in range(self.N_spp):
             mask = (spp_ids == s)
-            #if tf.reduce_any(mask):
-            #    tf.print("Spp", s,
-            #             "fit:", tf.reduce_mean(niche_fitness[mask]),
-            #             "grow:", tf.reduce_mean(actual_growth[mask]),
-            #             "resp:", tf.reduce_mean(maint[mask]))
+            if tf.reduce_any(mask):
+                tf.print("Spp", s,
+                         "fit:", tf.reduce_mean(niche_fitness[mask]),
+                         "grow:", tf.reduce_mean(actual_growth[mask]),
+                        "resp:", tf.reduce_mean(maint[mask]))
 
         # --- D. RECYCLING ---
         fin_mass_pos = tf.maximum(0.0, fin_mass)
@@ -349,11 +349,11 @@ class HybridEcosystem:
                 self.n_agents.assign_add(safe)
 
         if tf.shape(active_idx)[0] > 0:
-            tf.print("DIAG -> Growth:", tf.reduce_mean(actual_growth),
-                     "Resp:", tf.reduce_mean(maint),
-                     "SpaceF:", tf.reduce_mean(space_f),
-                     "Fitness:", tf.reduce_mean(niche_fitness),
-                     "Soil_N:", tf.reduce_mean(inorg_new[:, :, 0]))
+            #tf.print("DIAG -> Growth:", tf.reduce_mean(actual_growth),
+            #         "Resp:", tf.reduce_mean(maint),
+            #         "SpaceF:", tf.reduce_mean(space_f),
+            #         "Fitness:", tf.reduce_mean(niche_fitness),
+            #         "Soil_N:", tf.reduce_mean(inorg_new[:, :, 0]))
 
         return self.n_agents
 
