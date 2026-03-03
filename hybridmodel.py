@@ -1,6 +1,6 @@
 import tensorflow as tf
 import numpy as np
-#TEST
+#TEST3
 class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_covariances, growth_rate=0.7,
                  respiration_rate=0.02, turnover_rate=0.02, mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
