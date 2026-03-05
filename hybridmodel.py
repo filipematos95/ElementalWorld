@@ -88,7 +88,7 @@ class HybridEcosystem:
         center = self.niche_centers[species_id] # Shape (5,)
 
         # 1. Proportional Noise (10%) to keep relative ratios sane
-        noise_scale = 0.1
+        noise_scale = 0.5
         multiplicative_noise = tf.random.normal((count, 5), mean=1.0, stddev=noise_scale)
         raw = center[tf.newaxis, :] * multiplicative_noise
 
