@@ -78,6 +78,7 @@ class HybridEcosystem:
         self.seed_cost           = seed_cost
         self.seed_mass           = seed_mass
         self.K_biomass           = K_biomass
+        self.death_fitness_log = []  # Stores (species_id, fitness) of every agent that dies
 
     def add_initial_seeds(self, count=50, species_id=0):
 
@@ -310,6 +311,23 @@ class HybridEcosystem:
         valid_range_mask = tf.range(self.MAX_AGENTS) < self.n_agents
         is_alive = current_agents[:, 9] > 0.5
         keep_mask = tf.logical_and(valid_range_mask, is_alive)
+
+        # --- RECORD DEAD AGENTS' FITNESS BEFORE REMOVING THEM ---
+        # Find agents that were alive at the start of this step but are now dead
+        dying_mask = alive < 0.5  # alive=0 means they died this step
+
+        if tf.reduce_any(dying_mask):
+            dying_fitness = tf.boolean_mask(niche_fitness, dying_mask)
+            dying_spp = tf.boolean_mask(spp_ids, dying_mask)
+
+            # Store as python lists (outside tf.function graph for logging)
+            tf.py_function(
+                func=lambda f, s: self.death_fitness_log.extend(
+                    zip(s.numpy().tolist(), f.numpy().tolist())
+                ),
+                inp=[dying_fitness, dying_spp],
+                Tout=[]
+            )
 
         living_agents = tf.boolean_mask(current_agents, keep_mask)
         new_count = tf.shape(living_agents)[0]
