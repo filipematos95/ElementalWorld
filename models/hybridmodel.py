@@ -1,11 +1,11 @@
 import tensorflow as tf
 import numpy as np
-"TEST"
 class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_covariances, growth_rate=0.7,
                  respiration_rate=0.02, turnover_rate=0.02, mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
                  K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01, soil_ratio_noise=0.05,
-                 soil_input_rate=0.2, soil_availability_rate=[1.0, 1.0, 1.0, 1.0]):
+                 soil_input_rate=0.2, input_drift_scale = 0.08, soil_availability_rate=[1.0, 1.0, 1.0, 1.0],
+                 sigma_threshold=3.0):
         """
         Initialize the Ecosystem.
 
@@ -21,6 +21,8 @@ class HybridEcosystem:
 
         # --- 0. NICHE DEFINITIONS ---
         self.niche_centers = tf.constant(niche_centers, dtype=tf.float32, name="Niche_Centers")
+        niche_centers_norm = niche_centers / np.sum(niche_centers, axis=1, keepdims=True)
+        self.niche_centers = tf.constant(niche_centers_norm, dtype=tf.float32, name="Niche_Centers")
         self.N_spp = self.niche_centers.shape[0]
 
         # Load Covariances instead of left/right limits
@@ -31,6 +33,8 @@ class HybridEcosystem:
 
         self.soil_availability_rate = tf.constant(soil_availability_rate, dtype=tf.float32)
         self.soil_availability_rate = tf.reshape(self.soil_availability_rate, [1, 1, 4])
+        self.sigma_threshold = sigma_threshold
+
 
         # --- 1. SOIL SYSTEM (8 Channels) ---
         # [0:4] Inorganic N, P, K, O (Available)
@@ -79,6 +83,9 @@ class HybridEcosystem:
         self.seed_mass           = seed_mass
         self.K_biomass           = K_biomass
         self.death_fitness_log = []  # Stores (species_id, fitness) of every agent that dies
+        self.input_drift_scale = input_drift_scale
+        self.last_deficit = tf.Variable(tf.zeros((self.N_spp, 4)), dtype=tf.float32, name="Last_Deficit")
+
 
     def add_initial_seeds(self, count=50, species_id=0):
 
@@ -128,10 +135,13 @@ class HybridEcosystem:
 
         # External Input (rain/deposition) matching the species niche to prevent drift
         input_ratio = tf.constant(self.soil_base_ratio, dtype=tf.float32)
-        input_ratio = input_ratio / tf.reduce_sum(input_ratio) # Normalize to sum=1
 
-        # Add small consistent input
-        inorg_new = inorg_diff + (input_ratio * self.soil_input_rate)
+        # Drift the input ratio each step — forces agents to adapt continuously
+        input_drift = tf.random.normal(tf.shape(input_ratio), mean=0.0, stddev=self.input_drift_scale)
+        input_ratio_drifted = tf.maximum(0.001, input_ratio + input_drift)
+        input_ratio_drifted = input_ratio_drifted / tf.reduce_sum(input_ratio_drifted)
+
+        inorg_new = inorg_diff + (input_ratio_drifted * self.soil_input_rate)
         inorg_available = inorg_new * self.soil_availability_rate
 
         # ------------------------------------------
@@ -184,16 +194,31 @@ class HybridEcosystem:
         uptake_limit_K = available_npko[:,2] / (available_npko[:,2] + K_m)
         uptake_limit_O = available_npko[:,3] / (available_npko[:,3] + K_m)
 
-        nutrient_limits = tf.stack([uptake_limit_N, uptake_limit_P, uptake_limit_K, uptake_limit_O], axis=1)
-        nutrient_limit = tf.reduce_min(nutrient_limits, axis=1)
-        scale_factor = nutrient_limit[:, tf.newaxis]
+        up_N = desired_npko[:, 0:1] * uptake_limit_N[:, tf.newaxis]
+        up_P = desired_npko[:, 1:2] * uptake_limit_P[:, tf.newaxis]
+        up_K = desired_npko[:, 2:3] * uptake_limit_K[:, tf.newaxis]
+        up_O = desired_npko[:, 3:4] * uptake_limit_O[:, tf.newaxis]
 
-        actual_growth = desired_growth * nutrient_limit
-        c_uptake = c_uptake_potential * nutrient_limit
-        up_N = desired_npko[:, 0:1] * scale_factor
-        up_P = desired_npko[:, 1:2] * scale_factor
-        up_K = desired_npko[:, 2:3] * scale_factor
-        up_O = desired_npko[:, 3:4] * scale_factor
+        deficits = tf.stack([
+            tf.maximum(0.0, desired_npko[:, 0] - up_N[:, 0]),
+            tf.maximum(0.0, desired_npko[:, 1] - up_P[:, 0]),
+            tf.maximum(0.0, desired_npko[:, 2] - up_K[:, 0]),
+            tf.maximum(0.0, desired_npko[:, 3] - up_O[:, 0]),
+        ], axis=1)
+
+        per_spp_deficit = tf.zeros((self.N_spp, 4))
+        for s in range(self.N_spp):
+            mask = tf.cast(spp_ids == s, tf.float32)[:, tf.newaxis]
+            spp_def = tf.reduce_sum(deficits * mask, axis=0)
+            per_spp_deficit = tf.tensor_scatter_nd_update(
+                per_spp_deficit, [[s]], [spp_def]
+            )
+        self.last_deficit.assign(per_spp_deficit)
+
+        c_uptake = c_uptake_potential  # C is internal, not soil-limited
+
+        # actual_growth = total mass actually absorbed this step
+        actual_growth = c_uptake + up_N[:,0] + up_P[:,0] + up_K[:,0] + up_O[:,0]
 
         pool_C = (mass * curr_C) + c_uptake
         pool_N = (mass * curr_N) + up_N[:, 0]
@@ -425,9 +450,8 @@ class HybridEcosystem:
         mahal_dist = tf.sqrt(mahal_sq)
 
         # 3 Sigma boundary
-        SIGMA_THRESHOLD = 3.0
+        SIGMA_THRESHOLD = self.sigma_threshold
         normalized_dist = mahal_dist / SIGMA_THRESHOLD
-
         niche_fitness = 1.0 - tf.square(normalized_dist)
 
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
@@ -440,7 +464,7 @@ class HybridEcosystem:
 
         # If the species is extinct/not present, its fitness is 0
         if tf.shape(active_idx)[0] == 0:
-            return 0.0
+            return None
 
         data = tf.gather_nd(self.agents, active_idx)
         elementome = data[:, 4:9]
@@ -451,3 +475,19 @@ class HybridEcosystem:
         fitness = self._compute_niche_fitness_mahalanobis(elementome, centers, spp_ids)
 
         return float(tf.reduce_mean(fitness).numpy())
+
+    def get_species_mean_dead_fitness(self, species_id):
+        """Returns the mean fitness of agents of this species that died this step.
+        Returns None if no agents of this species died."""
+        species_deaths = [
+            fitness for spp, fitness in self.death_fitness_log
+            if spp == species_id
+        ]
+        if len(species_deaths) == 0:
+            return None
+        return float(np.mean(species_deaths))
+
+
+    def get_nutrient_deficit(self):
+        """Returns total unmet nutrient demand [N, P, K, O] from last step."""
+        return self.last_deficit.numpy()
