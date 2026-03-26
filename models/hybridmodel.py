@@ -141,6 +141,7 @@ class HybridEcosystem:
         input_ratio_drifted = tf.maximum(0.001, input_ratio + input_drift)
         input_ratio_drifted = input_ratio_drifted / tf.reduce_sum(input_ratio_drifted)
 
+        # Stochasticity
         inorg_new = inorg_diff + (input_ratio_drifted * self.soil_input_rate)
         inorg_available = inorg_new * self.soil_availability_rate
 
