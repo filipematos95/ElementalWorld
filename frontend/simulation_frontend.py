@@ -67,6 +67,9 @@ def _apply_config(params: dict):
         "soil_pool_mean", "soil_pool_std", "soil_ratio_noise",
         "scalar_interval", "snapshot_interval",
         "input_drift_scale", "sigma_threshold",
+        # ── stochastic destabilization ──────────────────
+        "catastrophe_interval", "catastrophe_mortality",
+        "p_disturbance", "disturbance_strength", "demo_noise_std",
     ]
     for k in scalar_keys:
         if k in params:
@@ -128,6 +131,9 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
                   mineralization_rate, seed_cost, seed_mass, K_biomass, sbr,
                   soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
                   sar, input_drift_scale, sigma_threshold,
+                  catastrophe_interval, catastrophe_mortality,   # ← new
+                  p_disturbance, disturbance_strength,           # ← new
+                  demo_noise_std,                                 # ← new
                   scalar_interval, snapshot_interval,
                   prog_offset, prog_total, prog_bar, status_el):
 
@@ -153,6 +159,12 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
         soil_availability_rate=sar,
         input_drift_scale=input_drift_scale,
         sigma_threshold=sigma_threshold,
+        # ── stochastic destabilization ──────────────────
+        catastrophe_interval=catastrophe_interval,
+        catastrophe_mortality=catastrophe_mortality,
+        p_disturbance=p_disturbance,
+        disturbance_strength=disturbance_strength,
+        demo_noise_std=demo_noise_std,
     )
 
     soil_snap = model.soil.numpy().copy()
@@ -322,6 +334,23 @@ with st.sidebar:
             for i in range(N_SPP)
         ]
 
+        st.subheader("🌩️ Stochastic Destabilization")
+        catastrophe_interval  = st.slider("Catastrophe Interval",  50,   500,  200,   step=50,
+                                          key="catastrophe_interval",
+                                          help="Steps between mass mortality events.")
+        catastrophe_mortality = st.slider("Catastrophe Mortality",  0.0,  0.9,  0.4,  step=0.05,
+                                          key="catastrophe_mortality",
+                                          help="Fraction of agents killed each catastrophe.")
+        p_disturbance         = st.slider("Disturbance Prob.",      0.0,  0.05, 0.01, step=0.005,
+                                          key="p_disturbance",
+                                          help="Probability per step of a local soil depletion patch.")
+        disturbance_strength  = st.slider("Disturbance Strength",   0.0,  1.0,  0.7,  step=0.05,
+                                          key="disturbance_strength",
+                                          help="Fraction of soil nutrients removed in the disturbed patch.")
+        demo_noise_std        = st.slider("Demographic Noise",      0.0,  0.01, 0.003, step=0.001,
+                                          key="demo_noise_std",       format="%.3f",
+                                          help="Std of random mass perturbation each step.")
+
         st.divider()
         st.subheader("🧬 Species Niche Centers")
         st.caption("Columns = stoichiometric ideal [C, N, P, K, O].")
@@ -350,7 +379,7 @@ with st.sidebar:
             label_visibility="collapsed",
         )
         try:
-            parsed       = eval(cov_code, {"np": np})
+            parsed          = eval(cov_code, {"np": np})
             SPP_COVARIANCES = np.array(parsed, dtype=np.float32)
             assert SPP_COVARIANCES.shape == (N_SPP, 5, 5), \
                 f"Expected ({N_SPP}, 5, 5), got {SPP_COVARIANCES.shape}"
@@ -388,6 +417,12 @@ if run_btn:
             soil_ratio_noise=soil_ratio_noise, soil_input_rate=soil_input_rate,
             sar=sar, input_drift_scale=input_drift_scale,
             sigma_threshold=sigma_threshold,
+            # ── stochastic destabilization ──────────────────
+            catastrophe_interval=catastrophe_interval,
+            catastrophe_mortality=catastrophe_mortality,
+            p_disturbance=p_disturbance,
+            disturbance_strength=disturbance_strength,
+            demo_noise_std=demo_noise_std,
             scalar_interval=scalar_interval, snapshot_interval=snapshot_interval,
             prog_offset=i, prog_total=NSEEDS,
             prog_bar=prog, status_el=status,
@@ -472,6 +507,12 @@ if run_btn:
             "soil_ratio_noise": soil_ratio_noise,
             "input_drift_scale": input_drift_scale,
             "sigma_threshold": sigma_threshold,
+            # ── stochastic destabilization ──────────────────
+            "catastrophe_interval":  catastrophe_interval,
+            "catastrophe_mortality": catastrophe_mortality,
+            "p_disturbance":         p_disturbance,
+            "disturbance_strength":  disturbance_strength,
+            "demo_noise_std":        demo_noise_std,
             "initial_seeds": initial_seeds,
             "scalar_interval": scalar_interval,
             "snapshot_interval": snapshot_interval,

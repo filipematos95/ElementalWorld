@@ -1,80 +1,61 @@
 import tensorflow as tf
 import numpy as np
-class HybridEcosystem:
-    def __init__(self, height, width, max_agents, niche_centers, niche_covariances, growth_rate=0.7,
-                 respiration_rate=0.02, turnover_rate=0.02, mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
-                 K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0, soil_pool_std=0.01, soil_ratio_noise=0.05,
-                 soil_input_rate=0.2, input_drift_scale = 0.08, soil_availability_rate=[1.0, 1.0, 1.0, 1.0],
-                 sigma_threshold=3.0):
-        """
-        Initialize the Ecosystem.
 
-        Args:
-            height, width: Grid dimensions.
-            max_agents: Max size of agent buffer.
-            niche_centers: (N_spp, 5) array of optimal [C, N, P, K, O].
-            niche_covariances: (N_spp, 5, 5) array of covariance matrices.
-        """
+
+class HybridEcosystem:
+    def __init__(self, height, width, max_agents, niche_centers, niche_covariances,
+                 growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
+                 mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
+                 K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0,
+                 soil_pool_std=0.01, soil_ratio_noise=0.05, soil_input_rate=0.2,
+                 input_drift_scale=0.08, soil_availability_rate=[1.0, 1.0, 1.0, 1.0],
+                 sigma_threshold=3.0,
+                 catastrophe_interval=200, catastrophe_mortality=0.4,
+                 p_disturbance=0.01, disturbance_radius=8, disturbance_strength=0.7,
+                 demo_noise_std=0.003):
+
         self.H = height
         self.W = width
         self.MAX_AGENTS = max_agents
 
-        # --- 0. NICHE DEFINITIONS ---
-        self.niche_centers = tf.constant(niche_centers, dtype=tf.float32, name="Niche_Centers")
         niche_centers_norm = niche_centers / np.sum(niche_centers, axis=1, keepdims=True)
         self.niche_centers = tf.constant(niche_centers_norm, dtype=tf.float32, name="Niche_Centers")
         self.N_spp = self.niche_centers.shape[0]
 
-        # Load Covariances instead of left/right limits
         self.tolerance_cov = tf.constant(niche_covariances, dtype=tf.float32, name="Niche_Covariances")
-
-        # Precompute the inverse covariance matrices for Mahalanobis
         self.tolerance_inv = tf.linalg.inv(self.tolerance_cov)
 
-        self.soil_availability_rate = tf.constant(soil_availability_rate, dtype=tf.float32)
-        self.soil_availability_rate = tf.reshape(self.soil_availability_rate, [1, 1, 4])
+        self.soil_availability_rate = tf.reshape(
+            tf.constant(soil_availability_rate, dtype=tf.float32), [1, 1, 4])
         self.sigma_threshold = sigma_threshold
 
-
-        # --- 1. SOIL SYSTEM (8 Channels) ---
-        # [0:4] Inorganic N, P, K, O (Available)
-        # [4:8] Organic   N, P, K, O (Litter/Locked)
         self.soil_input_rate = soil_input_rate
-        # Base ratio (same across all pixels, with small variation)
         if soil_base_ratio is None:
-            self.soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])  # [N, P, K, O]
+            self.soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])
         else:
-            self.soil_base_ratio = soil_base_ratio
+            self.soil_base_ratio = np.array(soil_base_ratio, dtype=np.float32)
 
-        # Create spatial variation: small perturbations around base ratio
-        # Shape: (H, W, 4)
-        noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
-        base_tiled = tf.constant(soil_base_ratio, dtype=tf.float32)[tf.newaxis, tf.newaxis, :]
-        base_tiled = tf.tile(base_tiled, [self.H, self.W, 1])
-
-        ratio_raw = base_tiled + noise
-        ratio_raw = tf.maximum(0.001, ratio_raw)  # Prevent negatives
-        init_inorg_ratio = ratio_raw / tf.reduce_sum(ratio_raw, axis=2, keepdims=True)  # Normalize to sum=1
-
-        # Pool size varies spatially (some areas richer than others)
-        pool_size = tf.random.normal((self.H, self.W, 1), mean=soil_pool_mean, stddev=soil_pool_std)
-        pool_size = tf.maximum(0.5, pool_size)  # Minimum pool
-
-        # Final inorganic concentrations = ratio × pool
+        noise      = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
+        base_tiled = tf.tile(
+            tf.constant(self.soil_base_ratio, dtype=tf.float32)[tf.newaxis, tf.newaxis, :],
+            [self.H, self.W, 1])
+        ratio_raw        = tf.maximum(0.001, base_tiled + noise)
+        init_inorg_ratio = ratio_raw / tf.reduce_sum(ratio_raw, axis=2, keepdims=True)
+        pool_size        = tf.maximum(0.5, tf.random.normal(
+            (self.H, self.W, 1), mean=soil_pool_mean, stddev=soil_pool_std))
         init_inorg = init_inorg_ratio * pool_size
-        init_org = tf.zeros((self.H, self.W, 4))
-        self.soil = tf.Variable(tf.concat([init_inorg, init_org], axis=-1), name="Soil")
+        self.soil  = tf.Variable(
+            tf.concat([init_inorg, tf.zeros((self.H, self.W, 4))], axis=-1), name="Soil")
 
-        # Diffusion Kernel
-        k = np.array([[0.05, 0.1, 0.05], [0.1, 0.4, 0.1], [0.05, 0.1, 0.05]], dtype=np.float32)
-        self.diff_kernel = tf.constant(np.repeat(k[:, :, np.newaxis], 4, axis=2)[:, :, :, np.newaxis])
+        k = np.array([[0.05, 0.1, 0.05],
+                      [0.1,  0.4, 0.1],
+                      [0.05, 0.1, 0.05]], dtype=np.float32)
+        self.diff_kernel = tf.constant(
+            np.repeat(k[:, :, np.newaxis], 4, axis=2)[:, :, :, np.newaxis])
 
-        # --- 2. AGENTS ---
-        # [0:y, 1:x, 2:spp, 3:mass, 4:C, 5:N, 6:P, 7:K, 8:O, 9:alive]
-        self.agents = tf.Variable(tf.zeros((self.MAX_AGENTS, 10), dtype=tf.float32), name="Agent_Buffer")
+        self.agents   = tf.Variable(tf.zeros((self.MAX_AGENTS, 10), dtype=tf.float32), name="Agent_Buffer")
         self.n_agents = tf.Variable(0, dtype=tf.int32)
 
-        # --- 3. PARAMETERS ---
         self.growth_rate         = growth_rate
         self.respiration_rate    = respiration_rate
         self.turnover_rate       = turnover_rate
@@ -82,123 +63,117 @@ class HybridEcosystem:
         self.seed_cost           = seed_cost
         self.seed_mass           = seed_mass
         self.K_biomass           = K_biomass
-        self.death_fitness_log = []  # Stores (species_id, fitness) of every agent that dies
-        self.input_drift_scale = input_drift_scale
-        self.last_deficit = tf.Variable(tf.zeros((self.N_spp, 4)), dtype=tf.float32, name="Last_Deficit")
+        self.input_drift_scale   = input_drift_scale
+        self.death_fitness_log   = []
+        self.last_deficit        = tf.Variable(tf.zeros((self.N_spp, 4)), dtype=tf.float32)
 
+        self.catastrophe_interval  = catastrophe_interval
+        self.catastrophe_mortality = catastrophe_mortality
+        self.p_disturbance         = p_disturbance
+        self.disturbance_radius    = disturbance_radius
+        self.disturbance_strength  = disturbance_strength
+        self.demo_noise_std        = demo_noise_std
+        self.step_count            = tf.Variable(0, dtype=tf.int32)
 
+    # ──────────────────────────────────────────────────────────────────────────
     def add_initial_seeds(self, count=50, species_id=0):
-
-        y = tf.random.uniform((count,), 0, self.H)
-        x = tf.random.uniform((count,), 0, self.W)
-        spp = tf.ones((count,)) * float(species_id)
+        y    = tf.random.uniform((count,), 0, self.H)
+        x    = tf.random.uniform((count,), 0, self.W)
+        spp  = tf.ones((count,)) * float(species_id)
         mass = tf.ones((count,)) * 0.1
-        center = self.niche_centers[species_id] # Shape (5,)
-
-        # 1. Proportional Noise (10%) to keep relative ratios sane
-        noise_scale = 0.5
-        multiplicative_noise = tf.random.normal((count, 5), mean=1.0, stddev=noise_scale)
-        raw = center[tf.newaxis, :] * multiplicative_noise
-
-        # 2. Normalize to sum=1 (initial stoichiometry)
+        center = self.niche_centers[species_id]
+        raw    = center[tf.newaxis, :] * tf.random.normal((count, 5), mean=1.0, stddev=0.5)
         stoich = raw / tf.reduce_sum(raw, axis=1, keepdims=True)
-
-        # NOTE: Removed the safety clamp because it relied on left/right borders.
-        # The proportional noise above is small enough that seeds shouldn't be born completely dead.
-
-        alive = tf.ones((count,))
-
         new_data = tf.concat([
             tf.stack([y, x, spp, mass], axis=1),
             stoich,
-            alive[:, tf.newaxis]
+            tf.ones((count, 1))
         ], axis=1)
-
         curr = self.n_agents.value()
-        idx = tf.range(curr, curr+count)[:, tf.newaxis]
-        self.agents.scatter_nd_update(idx, new_data)
+        self.agents.scatter_nd_update(tf.range(curr, curr + count)[:, tf.newaxis], new_data)
         self.n_agents.assign_add(count)
         print(f"Added {count} seeds of Spp {species_id}.")
 
+    # ──────────────────────────────────────────────────────────────────────────
     @tf.function
     def step(self, fitness_metric="mahalanobis"):
-        # ------------------------------------------
-        # PHASE 1: SOIL PHYSICS
-        # ------------------------------------------
-        soil_curr = self.soil
+
+        # ── PHASE 1: SOIL PHYSICS ─────────────────────────────────────────────
+        soil_curr  = self.soil
         inorg_curr = soil_curr[:, :, 0:4]
-        org   = soil_curr[:, :, 4:8]
+        org        = soil_curr[:, :, 4:8]
 
-        inorg_in = inorg_curr[tf.newaxis, ...]
-        inorg_padded = tf.pad(inorg_in, [[0,0], [1,1], [1,1], [0,0]], mode='SYMMETRIC')
-        inorg_diff = tf.nn.depthwise_conv2d(inorg_padded, self.diff_kernel, [1,1,1,1], "VALID")[0]
+        inorg_padded = tf.pad(
+            inorg_curr[tf.newaxis, ...],
+            [[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
+        inorg_diff = tf.nn.depthwise_conv2d(
+            inorg_padded, self.diff_kernel, [1, 1, 1, 1], "VALID")[0]
 
-        # External Input (rain/deposition) matching the species niche to prevent drift
-        input_ratio = tf.constant(self.soil_base_ratio, dtype=tf.float32)
-
-        # Drift the input ratio each step — forces agents to adapt continuously
-        input_drift = tf.random.normal(tf.shape(input_ratio), mean=0.0, stddev=self.input_drift_scale)
+        input_ratio         = tf.constant(self.soil_base_ratio, dtype=tf.float32)
+        input_drift         = tf.random.normal(tf.shape(input_ratio), mean=0.0,
+                                               stddev=self.input_drift_scale)
         input_ratio_drifted = tf.maximum(0.001, input_ratio + input_drift)
         input_ratio_drifted = input_ratio_drifted / tf.reduce_sum(input_ratio_drifted)
 
-        # Stochasticity
+        shock_factor        = tf.random.uniform([], 0.1, 3.0)
+        pulse               = tf.cast(tf.random.uniform([]) < 0.005, tf.float32)
+        input_ratio_drifted = input_ratio_drifted * (1.0 + pulse * (shock_factor - 1.0))
+
+        # Build inorg_new first, then apply disturbance via tf.where
         inorg_new = inorg_diff + (input_ratio_drifted * self.soil_input_rate)
+
+        do_disturb  = tf.random.uniform([]) < self.p_disturbance
+        cy          = tf.random.uniform([], 0, self.H, dtype=tf.int32)
+        cx          = tf.random.uniform([], 0, self.W, dtype=tf.int32)
+        yy2d, xx2d  = tf.meshgrid(tf.range(self.H), tf.range(self.W), indexing='ij')
+        dist2d      = tf.sqrt(tf.cast(
+            tf.square(yy2d - cy) + tf.square(xx2d - cx), tf.float32))
+        patch       = tf.cast(dist2d < self.disturbance_radius, tf.float32)[:, :, tf.newaxis]
+        disturbed   = inorg_new * (1.0 - patch * self.disturbance_strength)
+        inorg_new   = tf.where(do_disturb, disturbed, inorg_new)
+
         inorg_available = inorg_new * self.soil_availability_rate
 
-        # ------------------------------------------
-        # PHASE 2: AGENT BIOLOGY
-        # ------------------------------------------
+        # ── PHASE 2: AGENT BIOLOGY ────────────────────────────────────────────
         active_mask = self.agents[:, 9] > 0.5
         active_idx  = tf.where(active_mask)
 
-        # Early exit
         if tf.shape(active_idx)[0] == 0:
             flux = org * self.mineralization_rate
             self.soil.assign(tf.concat([inorg_curr + flux, org - flux], axis=-1))
             return self.n_agents
 
         active_data = tf.gather_nd(self.agents, active_idx)
-        spp_ids = tf.cast(active_data[:, 2], tf.int32)
-        coords = tf.cast(active_data[:, 0:2], tf.int32)
-        mass   = active_data[:, 3]
+        spp_ids     = tf.cast(active_data[:, 2], tf.int32)
+        coords      = tf.cast(active_data[:, 0:2], tf.int32)
+        mass        = active_data[:, 3]
+        curr_C      = active_data[:, 4]
+        curr_N      = active_data[:, 5]
+        curr_P      = active_data[:, 6]
+        curr_K      = active_data[:, 7]
+        curr_O      = active_data[:, 8]
 
-        # Current Internal Status (elementome ratios)
-        curr_C = active_data[:, 4]
-        curr_N = active_data[:, 5]
-        curr_P = active_data[:, 6]
-        curr_K = active_data[:, 7]
-        curr_O = active_data[:, 8]
+        # --- A. FITNESS ---
+        curr_elementome = active_data[:, 4:9]
+        my_centers      = tf.gather(self.niche_centers, spp_ids)
+        niche_fitness   = self._compute_niche_fitness_mahalanobis(
+            curr_elementome, my_centers, spp_ids)
 
-        # --- A. BIOGEOCHEMICAL NICHE FITNESS ---
-        curr_elementome = active_data[:, 4:9]  # [n_agents, 5] = [C, N, P, K, O]
-        my_centers = tf.gather(self.niche_centers, spp_ids)
-
-        # Replaced the old metric function with the pure Mahalanobis function
-        niche_fitness = self._compute_niche_fitness_mahalanobis(curr_elementome, my_centers, spp_ids)
-
-        # --- B. NEW UPTAKE LOGIC ---
-        desired_growth = niche_fitness * self.growth_rate * mass
-
+        # --- B. UPTAKE ---
+        desired_growth     = niche_fitness * self.growth_rate * mass
         c_uptake_potential = desired_growth * curr_C
+        remaining          = desired_growth - c_uptake_potential
 
-        remaining = desired_growth - c_uptake_potential
-        my_niche_pref = tf.gather(self.niche_centers[:, 1:], spp_ids)  # Take [N, P, K, O]
-        niche_sum = tf.reduce_sum(my_niche_pref, axis=1, keepdims=True) + 1e-9
-        niche_norm = my_niche_pref / niche_sum
-
-        desired_npko = remaining[:, tf.newaxis] * niche_norm
+        my_niche_pref  = tf.gather(self.niche_centers[:, 1:], spp_ids)
+        niche_norm     = my_niche_pref / (tf.reduce_sum(my_niche_pref, axis=1, keepdims=True) + 1e-9)
+        desired_npko   = remaining[:, tf.newaxis] * niche_norm
         available_npko = tf.gather_nd(inorg_available, coords)
 
         K_m = 0.1
-        uptake_limit_N = available_npko[:,0] / (available_npko[:,0] + K_m)
-        uptake_limit_P = available_npko[:,1] / (available_npko[:,1] + K_m)
-        uptake_limit_K = available_npko[:,2] / (available_npko[:,2] + K_m)
-        uptake_limit_O = available_npko[:,3] / (available_npko[:,3] + K_m)
-
-        up_N = desired_npko[:, 0:1] * uptake_limit_N[:, tf.newaxis]
-        up_P = desired_npko[:, 1:2] * uptake_limit_P[:, tf.newaxis]
-        up_K = desired_npko[:, 2:3] * uptake_limit_K[:, tf.newaxis]
-        up_O = desired_npko[:, 3:4] * uptake_limit_O[:, tf.newaxis]
+        up_N = desired_npko[:, 0:1] * (available_npko[:, 0:1] / (available_npko[:, 0:1] + K_m))
+        up_P = desired_npko[:, 1:2] * (available_npko[:, 1:2] / (available_npko[:, 1:2] + K_m))
+        up_K = desired_npko[:, 2:3] * (available_npko[:, 2:3] / (available_npko[:, 2:3] + K_m))
+        up_O = desired_npko[:, 3:4] * (available_npko[:, 3:4] / (available_npko[:, 3:4] + K_m))
 
         deficits = tf.stack([
             tf.maximum(0.0, desired_npko[:, 0] - up_N[:, 0]),
@@ -209,17 +184,13 @@ class HybridEcosystem:
 
         per_spp_deficit = tf.zeros((self.N_spp, 4))
         for s in range(self.N_spp):
-            mask = tf.cast(spp_ids == s, tf.float32)[:, tf.newaxis]
+            mask    = tf.cast(spp_ids == s, tf.float32)[:, tf.newaxis]
             spp_def = tf.reduce_sum(deficits * mask, axis=0)
-            per_spp_deficit = tf.tensor_scatter_nd_update(
-                per_spp_deficit, [[s]], [spp_def]
-            )
+            per_spp_deficit = tf.tensor_scatter_nd_update(per_spp_deficit, [[s]], [spp_def])
         self.last_deficit.assign(per_spp_deficit)
 
-        c_uptake = c_uptake_potential  # C is internal, not soil-limited
-
-        # actual_growth = total mass actually absorbed this step
-        actual_growth = c_uptake + up_N[:,0] + up_P[:,0] + up_K[:,0] + up_O[:,0]
+        c_uptake      = c_uptake_potential
+        actual_growth = c_uptake + up_N[:, 0] + up_P[:, 0] + up_K[:, 0] + up_O[:, 0]
 
         pool_C = (mass * curr_C) + c_uptake
         pool_N = (mass * curr_N) + up_N[:, 0]
@@ -227,9 +198,8 @@ class HybridEcosystem:
         pool_K = (mass * curr_K) + up_K[:, 0]
         pool_O = (mass * curr_O) + up_O[:, 0]
 
-        # --- C. GROWTH (Quota + Space + Niche) ---
+        # --- C. GROWTH ---
         MIN_QUOTA = 0.01
-
         Q_C = pool_C / (mass + 1e-9)
         Q_N = pool_N / (mass + 1e-9)
         Q_P = pool_P / (mass + 1e-9)
@@ -248,18 +218,20 @@ class HybridEcosystem:
         space_f  = tf.maximum(0.0, 1.0 - (loc_bio / self.K_biomass))
 
         realized_growth = actual_growth * limit_g * space_f
-        maint = mass * self.respiration_rate
+        maint    = mass * self.respiration_rate
         fin_mass = mass + realized_growth - maint
 
-        alive = tf.cast(fin_mass > 0.01, tf.float32)
+        # Demographic stochasticity
+        demo_noise = tf.random.normal(tf.shape(fin_mass), mean=0.0, stddev=self.demo_noise_std)
+        fin_mass   = fin_mass + demo_noise
+        alive      = tf.cast(fin_mass > 0.01, tf.float32)
 
-        for s in range(self.N_spp):
-            mask = (spp_ids == s)
-            #if tf.reduce_any(mask):
-            #    tf.print("Spp", s,
-            #             "fit:", tf.reduce_mean(niche_fitness[mask]),
-            #             "grow:", tf.reduce_mean(actual_growth[mask]),
-            #            "resp:", tf.reduce_mean(maint[mask]))
+        # Periodic catastrophe
+        self.step_count.assign_add(1)
+        is_catastrophe = tf.equal(self.step_count % self.catastrophe_interval, 0)
+        survival_roll  = tf.cast(
+            tf.random.uniform(tf.shape(alive)) > self.catastrophe_mortality, tf.float32)
+        alive = tf.where(is_catastrophe, alive * survival_roll, alive)
 
         # --- D. RECYCLING ---
         fin_mass_pos = tf.maximum(0.0, fin_mass)
@@ -279,17 +251,12 @@ class HybridEcosystem:
         fp_O = pool_O - loss_O
 
         fin_mass_alive = (fin_mass - turn) * alive
-        fr_C = fp_C / (fin_mass_alive + 1e-9)
-        fr_N = fp_N / (fin_mass_alive + 1e-9)
-        fr_P = fp_P / (fin_mass_alive + 1e-9)
-        fr_K = fp_K / (fin_mass_alive + 1e-9)
-        fr_O = fp_O / (fin_mass_alive + 1e-9)
 
-        fr_C = tf.clip_by_value(fr_C, 0.01, 0.99)
-        fr_N = tf.clip_by_value(fr_N, 0.01, 0.99)
-        fr_P = tf.clip_by_value(fr_P, 0.01, 0.99)
-        fr_K = tf.clip_by_value(fr_K, 0.01, 0.99)
-        fr_O = tf.clip_by_value(fr_O, 0.01, 0.99)
+        fr_C = tf.clip_by_value(fp_C / (fin_mass_alive + 1e-9), 0.01, 0.99)
+        fr_N = tf.clip_by_value(fp_N / (fin_mass_alive + 1e-9), 0.01, 0.99)
+        fr_P = tf.clip_by_value(fp_P / (fin_mass_alive + 1e-9), 0.01, 0.99)
+        fr_K = tf.clip_by_value(fp_K / (fin_mass_alive + 1e-9), 0.01, 0.99)
+        fr_O = tf.clip_by_value(fp_O / (fin_mass_alive + 1e-9), 0.01, 0.99)
 
         ratio_sum = fr_C + fr_N + fr_P + fr_K + fr_O + 1e-9
         fr_C = fr_C / ratio_sum
@@ -298,82 +265,74 @@ class HybridEcosystem:
         fr_K = fr_K / ratio_sum
         fr_O = fr_O / ratio_sum
 
-        g_rec_C = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_C)
+        # Scatter losses to organic pool — fully inlined, no nested def
         g_rec_N = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_N)
         g_rec_P = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_P)
         g_rec_K = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_K)
         g_rec_O = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_O)
 
-        g_up_N = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_N[:, 0])
-        g_up_P = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_P[:, 0])
-        g_up_K = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_K[:, 0])
-        g_up_O = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_O[:, 0])
+        g_up_N  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_N[:, 0])
+        g_up_P  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_P[:, 0])
+        g_up_K  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_K[:, 0])
+        g_up_O  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_O[:, 0])
 
-        fresh = tf.stack([g_rec_N, g_rec_P, g_rec_K, g_rec_O], axis=-1)
+        fresh   = tf.stack([g_rec_N, g_rec_P, g_rec_K, g_rec_O], axis=-1)
         org_tot = org + fresh
-        flux = org_tot * self.mineralization_rate
+        flux    = org_tot * self.mineralization_rate
         org_fin = org_tot - flux
-        up_st = tf.stack([g_up_N, g_up_P, g_up_K, g_up_O], axis=-1)
+        up_st   = tf.stack([g_up_N, g_up_P, g_up_K, g_up_O], axis=-1)
 
         inorg_fin = tf.maximum(0.0, inorg_curr + flux - up_st)
         self.soil.assign(tf.concat([inorg_fin, org_fin], axis=-1))
 
         # --- E. REPRODUCTION ---
-        is_fertile = (fin_mass_alive > self.seed_cost)
-        do_seed    = tf.random.uniform(tf.shape(fin_mass_alive)) < 0.1
-        parents    = is_fertile & do_seed
-        fin_mass_alive   = tf.where(parents, fin_mass_alive - self.seed_cost, fin_mass_alive)
+        is_fertile     = fin_mass_alive > self.seed_cost
+        do_seed        = tf.random.uniform(tf.shape(fin_mass_alive)) < 0.1
+        parents        = is_fertile & do_seed
+        fin_mass_alive = tf.where(parents, fin_mass_alive - self.seed_cost, fin_mass_alive)
 
         up_rows = tf.concat([
             active_data[:, 0:3],
             fin_mass_alive[:, tf.newaxis],
             fr_C[:, tf.newaxis],
-            fr_N[:, tf.newaxis], fr_P[:, tf.newaxis], fr_K[:, tf.newaxis], fr_O[:, tf.newaxis],
+            fr_N[:, tf.newaxis], fr_P[:, tf.newaxis],
+            fr_K[:, tf.newaxis], fr_O[:, tf.newaxis],
             alive[:, tf.newaxis]
         ], axis=1)
         self.agents.scatter_nd_update(active_idx, up_rows)
 
         current_agents = self.agents.read_value()
-        valid_range_mask = tf.range(self.MAX_AGENTS) < self.n_agents
-        is_alive = current_agents[:, 9] > 0.5
-        keep_mask = tf.logical_and(valid_range_mask, is_alive)
+        keep_mask      = tf.logical_and(
+            tf.range(self.MAX_AGENTS) < self.n_agents,
+            current_agents[:, 9] > 0.5)
 
-        # --- RECORD DEAD AGENTS' FITNESS BEFORE REMOVING THEM ---
-        # Find agents that were alive at the start of this step but are now dead
-        dying_mask = alive < 0.5  # alive=0 means they died this step
-
+        dying_mask = alive < 0.5
         if tf.reduce_any(dying_mask):
-            dying_fitness = tf.boolean_mask(niche_fitness, dying_mask)
-            dying_spp = tf.boolean_mask(spp_ids, dying_mask)
-
-            # Store as python lists (outside tf.function graph for logging)
             tf.py_function(
                 func=lambda f, s: self.death_fitness_log.extend(
-                    zip(s.numpy().tolist(), f.numpy().tolist())
-                ),
-                inp=[dying_fitness, dying_spp],
-                Tout=[]
-            )
+                    zip(s.numpy().tolist(), f.numpy().tolist())),
+                inp=[tf.boolean_mask(niche_fitness, dying_mask),
+                     tf.boolean_mask(spp_ids, dying_mask)],
+                Tout=[])
 
-        living_agents = tf.boolean_mask(current_agents, keep_mask)
-        new_count = tf.shape(living_agents)[0]
-
-        padding = tf.zeros((self.MAX_AGENTS - new_count, 10), dtype=tf.float32)
-        new_tensor_state = tf.concat([living_agents, padding], axis=0)
-
+        living_agents    = tf.boolean_mask(current_agents, keep_mask)
+        new_count        = tf.shape(living_agents)[0]
+        new_tensor_state = tf.concat(
+            [living_agents,
+             tf.zeros((self.MAX_AGENTS - new_count, 10), dtype=tf.float32)],
+            axis=0)
         self.agents.assign(new_tensor_state)
         self.n_agents.assign(new_count)
 
-        # Spawn Seeds
+        # Spawn offspring
         p_idx = tf.where(parents)[:, 0]
-        n_s = tf.shape(p_idx)[0]
+        n_s   = tf.shape(p_idx)[0]
         if n_s > 0:
-            p_dat = tf.gather(up_rows, p_idx)
-            dy = tf.random.uniform((n_s,), -1, 2, dtype=tf.int32)
-            dx = tf.random.uniform((n_s,), -1, 2, dtype=tf.int32)
-            ny = (tf.cast(p_dat[:,0], tf.int32) + dy) % self.H
-            nx = (tf.cast(p_dat[:,1], tf.int32) + dx) % self.W
-
+            p_dat  = tf.gather(up_rows, p_idx)
+            dy     = tf.random.uniform((n_s,), -1, 2, dtype=tf.int32)
+            dx     = tf.random.uniform((n_s,), -1, 2, dtype=tf.int32)
+            ny     = (tf.cast(p_dat[:, 0], tf.int32) + dy) % self.H
+            nx     = (tf.cast(p_dat[:, 1], tf.int32) + dx) % self.W
             c_rows = tf.concat([
                 tf.cast(ny, tf.float32)[:, tf.newaxis],
                 tf.cast(nx, tf.float32)[:, tf.newaxis],
@@ -382,113 +341,68 @@ class HybridEcosystem:
                 p_dat[:, 4:9],
                 tf.ones((n_s, 1))
             ], axis=1)
-
-            st = self.n_agents.value()
+            st   = self.n_agents.value()
             safe = tf.minimum(n_s, self.MAX_AGENTS - st)
             if safe > 0:
                 self.agents.scatter_nd_update(
-                    tf.range(st, st+safe)[:, tf.newaxis],
-                    c_rows[:safe]
-                )
+                    tf.range(st, st + safe)[:, tf.newaxis],
+                    c_rows[:safe])
                 self.n_agents.assign_add(safe)
-
-
-        #if tf.shape(active_idx)[0] > 0:
-            #tf.print("DIAG -> Growth:", tf.reduce_mean(actual_growth),
-            #         "Resp:", tf.reduce_mean(maint),
-            #         "SpaceF:", tf.reduce_mean(space_f),
-            #         "Fitness:", tf.reduce_mean(niche_fitness),
-            #         "Soil_N:", tf.reduce_mean(inorg_new[:, :, 0]))
 
         return self.n_agents
 
+    # ──────────────────────────────────────────────────────────────────────────
     def get_species_biomass(self, species_id):
         active_mask = (self.agents[:, 9] > 0.5) & (self.agents[:, 2] == float(species_id))
-        active_idx = tf.where(active_mask)
+        active_idx  = tf.where(active_mask)
         if tf.shape(active_idx)[0] == 0:
             return np.zeros((self.H, self.W))
-        data = tf.gather_nd(self.agents, active_idx)
+        data   = tf.gather_nd(self.agents, active_idx)
         coords = tf.cast(data[:, 0:2], tf.int32)
-        mass = data[:, 3]
-        grid = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, mass)
+        grid   = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, data[:, 3])
         return grid.numpy()
 
     def get_biomass_grid(self):
-        active_mask = self.agents[:, 9] > 0.5
-        active_idx = tf.where(active_mask)
+        active_idx = tf.where(self.agents[:, 9] > 0.5)
         if tf.shape(active_idx)[0] == 0:
             return np.zeros((self.H, self.W))
-        data = tf.gather_nd(self.agents, active_idx)
+        data   = tf.gather_nd(self.agents, active_idx)
         coords = tf.cast(data[:, 0:2], tf.int32)
-        mass = data[:, 3]
-        grid = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, mass)
+        grid   = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, data[:, 3])
         return grid.numpy()
 
     def get_element_pools(self):
-        active_mask = self.agents[:, 9] > 0.5
-        idx = tf.where(active_mask)
-        if tf.shape(idx)[0] == 0: return [0.0, 0.0, 0.0, 0.0, 0.0]
+        idx = tf.where(self.agents[:, 9] > 0.5)
+        if tf.shape(idx)[0] == 0:
+            return [0.0, 0.0, 0.0, 0.0, 0.0]
         data = tf.gather_nd(self.agents, idx)
-        mass = data[:, 3]
-        stoich = data[:, 4:9]
-        element_masses = stoich * mass[:, tf.newaxis]
-        totals = tf.reduce_sum(element_masses, axis=0)
-        return totals.numpy()
+        return tf.reduce_sum(data[:, 4:9] * data[:, 3:4], axis=0).numpy()
 
     def _compute_niche_fitness_mahalanobis(self, elementome_vals, my_centers, spp_ids):
         n_agents = tf.shape(elementome_vals)[0]
-
-        delta = elementome_vals - my_centers
-
-        if spp_ids is None or tf.shape(spp_ids)[0] != n_agents:
-            inv_cov = self.tolerance_inv[0:1]
-        else:
-            inv_cov = tf.gather(self.tolerance_inv, spp_ids)
-
-        delta_weighted = tf.einsum('ni,nij->nj', delta, inv_cov)
-        mahal_sq = tf.reduce_sum(delta * delta_weighted, axis=1)
-
-        mahal_dist = tf.sqrt(mahal_sq)
-
-        # 3 Sigma boundary
-        SIGMA_THRESHOLD = self.sigma_threshold
-        normalized_dist = mahal_dist / SIGMA_THRESHOLD
-        niche_fitness = 1.0 - tf.square(normalized_dist)
-
+        delta    = elementome_vals - my_centers
+        inv_cov  = (tf.gather(self.tolerance_inv, spp_ids)
+                    if spp_ids is not None and tf.shape(spp_ids)[0] == n_agents
+                    else self.tolerance_inv[0:1])
+        mahal_sq      = tf.reduce_sum(delta * tf.einsum('ni,nij->nj', delta, inv_cov), axis=1)
+        mahal_dist    = tf.sqrt(mahal_sq)
+        niche_fitness = 1.0 - tf.square(mahal_dist / self.sigma_threshold)
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
-
     def get_species_mean_fitness(self, species_id):
-        """Calculates the current average Mahalanobis fitness for a specific species."""
         active_mask = (self.agents[:, 9] > 0.5) & (self.agents[:, 2] == float(species_id))
-        active_idx = tf.where(active_mask)
-
-        # If the species is extinct/not present, its fitness is 0
+        active_idx  = tf.where(active_mask)
         if tf.shape(active_idx)[0] == 0:
             return None
-
-        data = tf.gather_nd(self.agents, active_idx)
-        elementome = data[:, 4:9]
+        data    = tf.gather_nd(self.agents, active_idx)
         spp_ids = tf.cast(data[:, 2], tf.int32)
-        centers = tf.gather(self.niche_centers, spp_ids)
-
-        # Call the internal Mahalanobis function
-        fitness = self._compute_niche_fitness_mahalanobis(elementome, centers, spp_ids)
-
+        fitness = self._compute_niche_fitness_mahalanobis(
+            data[:, 4:9], tf.gather(self.niche_centers, spp_ids), spp_ids)
         return float(tf.reduce_mean(fitness).numpy())
 
     def get_species_mean_dead_fitness(self, species_id):
-        """Returns the mean fitness of agents of this species that died this step.
-        Returns None if no agents of this species died."""
-        species_deaths = [
-            fitness for spp, fitness in self.death_fitness_log
-            if spp == species_id
-        ]
-        if len(species_deaths) == 0:
-            return None
-        return float(np.mean(species_deaths))
-
+        deaths = [f for s, f in self.death_fitness_log if s == species_id]
+        return float(np.mean(deaths)) if deaths else None
 
     def get_nutrient_deficit(self):
-        """Returns total unmet nutrient demand [N, P, K, O] from last step."""
         return self.last_deficit.numpy()
