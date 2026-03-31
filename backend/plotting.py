@@ -5,7 +5,9 @@ import numpy as np
 
 NUTRIENT_NAMES = ["Nitrogen (N)", "Phosphorus (P)", "Potassium (K)", "Oxygen (O)"]
 ELEMENTS       = ["C", "N", "P", "K", "O"]
-SPP_COLORS     = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+SPP_COLORS     = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
+                  "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
+                  "#bcbd22", "#17becf"]
 
 
 def plot_soil(soil: np.ndarray) -> go.Figure:
@@ -210,5 +212,48 @@ def plot_nutrient_deficit(steps: np.ndarray, history_deficit: list,
         title="Unmet Nutrient Demand per Species",
         template="plotly_white",
         height=400,
+    )
+    return fig
+
+def plot_species_biomass_std(steps: np.ndarray, history_spp_biomass: list,
+                             history_spp_biomass_std: list,
+                             spp_labels: list) -> go.Figure:
+    fig = go.Figure()
+    steps_list = steps.tolist()
+    for s, label in enumerate(spp_labels):
+        mu  = np.array(history_spp_biomass[s])
+        std = np.array(history_spp_biomass_std[s])
+        c   = SPP_COLORS[s % len(SPP_COLORS)]
+        fig.add_trace(go.Scatter(
+            x=steps_list + steps_list[::-1],
+            y=np.concatenate([mu + std, (mu - std)[::-1]]).tolist(),
+            fill="toself", fillcolor=c, opacity=0.15,
+            line=dict(color="rgba(0,0,0,0)"), showlegend=False,
+        ))
+        fig.add_trace(go.Scatter(
+            x=steps_list, y=mu.tolist(), name=label,
+            line=dict(color=c, width=2),
+        ))
+    fig.update_layout(
+        title="Per-Species Biomass ± 1 SD across seeds",
+        xaxis_title="Step", yaxis_title="Mean Biomass",
+        template="plotly_white", height=500,
+    )
+    return fig
+
+def plot_species_age(steps: np.ndarray, history_spp_age: list,
+                     spp_labels: list) -> go.Figure:
+    fig = go.Figure()
+    steps_list = steps.tolist()
+    for s_id, (data, label) in enumerate(zip(history_spp_age, spp_labels)):
+        fig.add_trace(go.Scatter(
+            x=steps_list, y=list(data),
+            mode="lines", name=label,
+            line=dict(color=SPP_COLORS[s_id % len(SPP_COLORS)], width=2),
+        ))
+    fig.update_layout(
+        title="Mean Agent Age per Species",
+        xaxis_title="Step", yaxis_title="Mean Age (steps)",
+        template="plotly_white", height=500,
     )
     return fig
