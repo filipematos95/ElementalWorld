@@ -53,7 +53,8 @@ class HybridEcosystem:
         self.diff_kernel = tf.constant(
             np.repeat(k[:, :, np.newaxis], 4, axis=2)[:, :, :, np.newaxis])
 
-        self.agents   = tf.Variable(tf.zeros((self.MAX_AGENTS, 10), dtype=tf.float32), name="Agent_Buffer")
+        # ← AGE: 10 → 11 columns  [y, x, spp, mass, C, N, P, K, O, alive, age]
+        self.agents   = tf.Variable(tf.zeros((self.MAX_AGENTS, 11), dtype=tf.float32), name="Agent_Buffer")
         self.n_agents = tf.Variable(0, dtype=tf.int32)
 
         self.growth_rate         = growth_rate
@@ -82,12 +83,13 @@ class HybridEcosystem:
         spp  = tf.ones((count,)) * float(species_id)
         mass = tf.ones((count,)) * 0.1
         center = self.niche_centers[species_id]
-        raw    = center[tf.newaxis, :] * tf.random.normal((count, 5), mean=1.0, stddev=0.5)
+        raw    = center[tf.newaxis, :] * tf.random.normal((count, 5), mean=1.0, stddev=0.05)
         stoich = raw / tf.reduce_sum(raw, axis=1, keepdims=True)
         new_data = tf.concat([
             tf.stack([y, x, spp, mass], axis=1),
             stoich,
-            tf.ones((count, 1))
+            tf.ones((count, 1)),   # alive
+            tf.zeros((count, 1)),  # ← AGE: age = 0
         ], axis=1)
         curr = self.n_agents.value()
         self.agents.scatter_nd_update(tf.range(curr, curr + count)[:, tf.newaxis], new_data)
@@ -119,7 +121,6 @@ class HybridEcosystem:
         pulse               = tf.cast(tf.random.uniform([]) < 0.005, tf.float32)
         input_ratio_drifted = input_ratio_drifted * (1.0 + pulse * (shock_factor - 1.0))
 
-        # Build inorg_new first, then apply disturbance via tf.where
         inorg_new = inorg_diff + (input_ratio_drifted * self.soil_input_rate)
 
         do_disturb  = tf.random.uniform([]) < self.p_disturbance
@@ -152,6 +153,7 @@ class HybridEcosystem:
         curr_P      = active_data[:, 6]
         curr_K      = active_data[:, 7]
         curr_O      = active_data[:, 8]
+        age         = active_data[:, 10]  # ← AGE
 
         # --- A. FITNESS ---
         curr_elementome = active_data[:, 4:9]
@@ -221,17 +223,18 @@ class HybridEcosystem:
         maint    = mass * self.respiration_rate
         fin_mass = mass + realized_growth - maint
 
-        # Demographic stochasticity
         demo_noise = tf.random.normal(tf.shape(fin_mass), mean=0.0, stddev=self.demo_noise_std)
         fin_mass   = fin_mass + demo_noise
         alive      = tf.cast(fin_mass > 0.01, tf.float32)
 
-        # Periodic catastrophe
         self.step_count.assign_add(1)
         is_catastrophe = tf.equal(self.step_count % self.catastrophe_interval, 0)
         survival_roll  = tf.cast(
             tf.random.uniform(tf.shape(alive)) > self.catastrophe_mortality, tf.float32)
         alive = tf.where(is_catastrophe, alive * survival_roll, alive)
+
+        # ← AGE: increment age for survivors, reset to 0 for dead
+        new_age = (age + 1.0) * alive
 
         # --- D. RECYCLING ---
         fin_mass_pos = tf.maximum(0.0, fin_mass)
@@ -265,7 +268,6 @@ class HybridEcosystem:
         fr_K = fr_K / ratio_sum
         fr_O = fr_O / ratio_sum
 
-        # Scatter losses to organic pool — fully inlined, no nested def
         g_rec_N = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_N)
         g_rec_P = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_P)
         g_rec_K = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_K)
@@ -286,9 +288,10 @@ class HybridEcosystem:
         self.soil.assign(tf.concat([inorg_fin, org_fin], axis=-1))
 
         # --- E. REPRODUCTION ---
-        is_fertile     = fin_mass_alive > self.seed_cost
-        do_seed        = tf.random.uniform(tf.shape(fin_mass_alive)) < 0.1
-        parents        = is_fertile & do_seed
+        is_fertile = fin_mass_alive > self.seed_cost
+        seed_prob  = 0.1 * niche_fitness                                      # ← FIX
+        do_seed    = tf.random.uniform(tf.shape(fin_mass_alive)) < seed_prob  # ← FIX
+        parents    = is_fertile & tf.cast(do_seed, tf.bool)
         fin_mass_alive = tf.where(parents, fin_mass_alive - self.seed_cost, fin_mass_alive)
 
         up_rows = tf.concat([
@@ -297,7 +300,8 @@ class HybridEcosystem:
             fr_C[:, tf.newaxis],
             fr_N[:, tf.newaxis], fr_P[:, tf.newaxis],
             fr_K[:, tf.newaxis], fr_O[:, tf.newaxis],
-            alive[:, tf.newaxis]
+            alive[:, tf.newaxis],
+            new_age[:, tf.newaxis],  # ← AGE
         ], axis=1)
         self.agents.scatter_nd_update(active_idx, up_rows)
 
@@ -319,7 +323,7 @@ class HybridEcosystem:
         new_count        = tf.shape(living_agents)[0]
         new_tensor_state = tf.concat(
             [living_agents,
-             tf.zeros((self.MAX_AGENTS - new_count, 10), dtype=tf.float32)],
+             tf.zeros((self.MAX_AGENTS - new_count, 11), dtype=tf.float32)],  # ← AGE: 10→11
             axis=0)
         self.agents.assign(new_tensor_state)
         self.n_agents.assign(new_count)
@@ -339,7 +343,8 @@ class HybridEcosystem:
                 p_dat[:, 2:3],
                 tf.ones((n_s, 1)) * self.seed_mass,
                 p_dat[:, 4:9],
-                tf.ones((n_s, 1))
+                tf.ones((n_s, 1)),   # alive
+                tf.zeros((n_s, 1)),  # ← AGE: offspring start at age 0
             ], axis=1)
             st   = self.n_agents.value()
             safe = tf.minimum(n_s, self.MAX_AGENTS - st)
@@ -378,6 +383,13 @@ class HybridEcosystem:
         data = tf.gather_nd(self.agents, idx)
         return tf.reduce_sum(data[:, 4:9] * data[:, 3:4], axis=0).numpy()
 
+    def get_mean_agent_age(self):  # ← AGE: new getter
+        active_idx = tf.where(self.agents[:, 9] > 0.5)
+        if tf.shape(active_idx)[0] == 0:
+            return 0.0
+        data = tf.gather_nd(self.agents, active_idx)
+        return float(tf.reduce_mean(data[:, 10]).numpy())
+
     def _compute_niche_fitness_mahalanobis(self, elementome_vals, my_centers, spp_ids):
         n_agents = tf.shape(elementome_vals)[0]
         delta    = elementome_vals - my_centers
@@ -406,3 +418,11 @@ class HybridEcosystem:
 
     def get_nutrient_deficit(self):
         return self.last_deficit.numpy()
+
+    def get_species_mean_age(self, species_id):
+        active_mask = (self.agents[:, 9] > 0.5) & (self.agents[:, 2] == float(species_id))
+        active_idx  = tf.where(active_mask)
+        if tf.shape(active_idx)[0] == 0:
+            return 0.0
+        data = tf.gather_nd(self.agents, active_idx)
+        return float(tf.reduce_mean(data[:, 10]).numpy())

@@ -1,5 +1,4 @@
 # frontend/app.py
-
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -10,40 +9,52 @@ from models.hybridmodel import HybridEcosystem
 import backend.plotting as ep
 from datetime import datetime
 import pickle, io
-import plotly.graph_objects as go
+import json
 
 st.set_page_config(page_title="Ecosystem Simulator", page_icon="🌿", layout="wide")
 st.title("🌿 Hybrid Ecosystem Simulator")
 st.markdown("Configure parameters in the sidebar, then click **▶ Run Simulation**.")
 
-# ─────────────────────────────────────────────
-# CONSTANTS
-# ─────────────────────────────────────────────
-N_SPP           = 4
-SPP_LABELS      = [f"Species {i+1}" for i in range(N_SPP)]
+
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "results", "default_config.json")
+def _load_default_config() -> dict | None:
+    if os.path.exists(DEFAULT_CONFIG_PATH):
+        with open(DEFAULT_CONFIG_PATH, "r") as f:
+            return json.load(f)
+    return None
+
+_saved_defaults = _load_default_config()
+
+
 DEFAULT_CENTERS = [
-    [0.400, 0.247, 0.035, 0.247, 0.071],
-    [0.400, 0.214, 0.086, 0.214, 0.086],
-    [0.400, 0.233, 0.133, 0.167, 0.067],
-    [0.400, 0.250, 0.050, 0.250, 0.050],
+    [0.4192, 0.0208, 0.0014, 0.0077, 0.5509],
+    [0.4282, 0.0201, 0.0011, 0.0097, 0.5408],
+    [0.4020, 0.0223, 0.0011, 0.0072, 0.5674],
+    [0.4400, 0.0267, 0.0014, 0.0097, 0.5221],
+    [0.3839, 0.0195, 0.0017, 0.0055, 0.5894],
 ]
 DEFAULT_COV_CODE = """np.array([
-    [[0.03,0,0,0,0],[0,0.015,0,0,0],[0,0,0.04,0,0],[0,0,0,0.015,0],[0,0,0,0,0.04]],
-    [[0.03,0,0,0,0],[0,0.03,0,0,0],[0,0,0.03,0,0],[0,0,0,0.03,0],[0,0,0,0,0.03]],
-    [[0.03,0,0,0,0],[0,0.03,0,0,0],[0,0,0.06,0,0],[0,0,0,0.03,0],[0,0,0,0,0.03]],
-    [[0.03,0,0,0,0],[0,0.03,0,0,0],[0,0,0.04,0,0],[0,0,0,0.04,0],[0,0,0,0,0.015]],
+  [[0.00027, -0.00011, -0.00001, -0.00001, -0.00009], [-0.00011, 0.00014, 0.00001, 0.00001, 0.00001], [-0.00001, 0.00001, 0.00006, 0.00000, -0.00000], [-0.00001, 0.00001, 0.00000, 0.00007, -0.00001], [-0.00009, 0.00001, -0.00000, -0.00001, 0.00015]],
+  [[0.00049, -0.00003, -0.00000, -0.00004, -0.00033], [-0.00003, 0.00009, 0.00000, -0.00000, 0.00002], [-0.00000, 0.00000, 0.00008, 0.00000, 0.00000], [-0.00004, -0.00000, 0.00000, 0.00010, 0.00002], [-0.00033, 0.00002, 0.00000, 0.00002, 0.00037]],
+  [[0.00098, 0.00002, 0.00000, 0.00000, -0.00087], [0.00002, 0.00015, 0.00000, 0.00001, -0.00005], [0.00000, 0.00000, 0.00013, 0.00000, -0.00000], [0.00000, 0.00001, 0.00000, 0.00014, -0.00002], [-0.00087, -0.00005, -0.00000, -0.00002, 0.00108]],
+  [[0.00053, -0.00000, 0.00000, 0.00003, -0.00045], [-0.00000, 0.00016, 0.00000, 0.00001, -0.00007], [0.00000, 0.00000, 0.00010, 0.00000, -0.00000], [0.00003, 0.00001, 0.00000, 0.00010, -0.00004], [-0.00045, -0.00007, -0.00000, -0.00004, 0.00067]],
+  [[0.00047, 0.00002, -0.00001, -0.00001, -0.00038], [0.00002, 0.00010, 0.00000, 0.00000, -0.00003], [-0.00001, 0.00000, 0.00009, 0.00000, 0.00000], [-0.00001, 0.00000, 0.00000, 0.00010, 0.00000], [-0.00038, -0.00003, 0.00000, 0.00000, 0.00050]]
 ], dtype=np.float32)"""
+
 DEFAULT_COV = np.array([
-    [[0.03,0,0,0,0],[0,0.015,0,0,0],[0,0,0.04,0,0],[0,0,0,0.015,0],[0,0,0,0,0.04]],
-    [[0.03,0,0,0,0],[0,0.03,0,0,0],[0,0,0.03,0,0],[0,0,0,0.03,0],[0,0,0,0,0.03]],
-    [[0.03,0,0,0,0],[0,0.03,0,0,0],[0,0,0.06,0,0],[0,0,0,0.03,0],[0,0,0,0,0.03]],
-    [[0.03,0,0,0,0],[0,0.03,0,0,0],[0,0,0.04,0,0],[0,0,0,0.04,0],[0,0,0,0,0.015]],
+    [[0.00027, -0.00011, -0.00001, -0.00001, -0.00009], [-0.00011, 0.00014, 0.00001, 0.00001, 0.00001], [-0.00001, 0.00001, 0.00006, 0.00000, -0.00000], [-0.00001, 0.00001, 0.00000, 0.00007, -0.00001], [-0.00009, 0.00001, -0.00000, -0.00001, 0.00015]],
+    [[0.00049, -0.00003, -0.00000, -0.00004, -0.00033], [-0.00003, 0.00009, 0.00000, -0.00000, 0.00002], [-0.00000, 0.00000, 0.00008, 0.00000, 0.00000], [-0.00004, -0.00000, 0.00000, 0.00010, 0.00002], [-0.00033, 0.00002, 0.00000, 0.00002, 0.00037]],
+    [[0.00098, 0.00002, 0.00000, 0.00000, -0.00087], [0.00002, 0.00015, 0.00000, 0.00001, -0.00005], [0.00000, 0.00000, 0.00013, 0.00000, -0.00000], [0.00000, 0.00001, 0.00000, 0.00014, -0.00002], [-0.00087, -0.00005, -0.00000, -0.00002, 0.00108]],
+    [[0.00053, -0.00000, 0.00000, 0.00003, -0.00045], [-0.00000, 0.00016, 0.00000, 0.00001, -0.00007], [0.00000, 0.00000, 0.00010, 0.00000, -0.00000], [0.00003, 0.00001, 0.00000, 0.00010, -0.00004], [-0.00045, -0.00007, -0.00000, -0.00004, 0.00067]],
+    [[0.00047, 0.00002, -0.00001, -0.00001, -0.00038], [0.00002, 0.00010, 0.00000, 0.00000, -0.00003], [-0.00001, 0.00000, 0.00009, 0.00000, 0.00000], [-0.00001, 0.00000, 0.00000, 0.00010, 0.00000], [-0.00038, -0.00003, 0.00000, 0.00000, 0.00050]]
 ], dtype=np.float32)
+
 
 # ─────────────────────────────────────────────
 # SESSION STATE INIT
 # ─────────────────────────────────────────────
 for key, default in [
+    ("N_SPP",                5),
     ("results",           None),
     ("soil_snapshot",     None),
     ("ran",               False),
@@ -54,6 +65,7 @@ for key, default in [
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
 
 # ─────────────────────────────────────────────
 # LOAD HELPERS
@@ -67,10 +79,13 @@ def _apply_config(params: dict):
         "soil_pool_mean", "soil_pool_std", "soil_ratio_noise",
         "scalar_interval", "snapshot_interval",
         "input_drift_scale", "sigma_threshold",
-        # ── stochastic destabilization ──────────────────
         "catastrophe_interval", "catastrophe_mortality",
         "p_disturbance", "disturbance_strength", "demo_noise_std",
     ]
+    if "N_SPP" in params:
+        st.session_state["N_SPP"] = int(params["N_SPP"])
+    n_spp = st.session_state["N_SPP"]
+
     for k in scalar_keys:
         if k in params:
             st.session_state[k] = params[k]
@@ -83,7 +98,7 @@ def _apply_config(params: dict):
                         params.get("soil_availability_rate", [0.4, 0.1, 0.1, 0.3])):
         st.session_state[key] = float(val)
 
-    for i, n in enumerate(params.get("initial_seeds", [10, 10, 10, 10])):
+    for i, n in enumerate(params.get("initial_seeds", [10] * n_spp)):
         st.session_state[f"seeds_{i}"] = int(n)
 
     for s, row in enumerate(params.get("spp_centers", DEFAULT_CENTERS)):
@@ -96,25 +111,29 @@ def _apply_config(params: dict):
 
 def _apply_everything(data: dict):
     _apply_config(data["parameters"])
+    n_spp = st.session_state["N_SPP"]  # ← BUG 6 FIX: read AFTER _apply_config
     st.session_state["results"] = {
         "history_biomass":               data["history_biomass"],
         "history_agents":                data["history_spp_count"],
         "history_elements":              np.array(data["history_elements"]),
         "history_biomass_grid":          data["history_biomass_grid"],
         "history_spp_biomass":           data["history_spp_biomass"],
+        "history_spp_age":               data.get("history_spp_age",
+                                                  [[] for _ in range(n_spp)]),
         "history_spp_biomass_std":       data.get("history_spp_biomass_std",
-                                                  [[] for _ in range(N_SPP)]),
+                                                  [[] for _ in range(n_spp)]),
         "history_spp_fitness":           data.get("history_spp_fitness",
-                                                  [[] for _ in range(N_SPP)]),
+                                                  [[] for _ in range(n_spp)]),
         "history_spp_dead_fitness_mean": data.get("history_spp_dead_fitness_mean",
-                                                  [[] for _ in range(N_SPP)]),
+                                                  [[] for _ in range(n_spp)]),
         "history_spp_grid":              data["history_spp_biomass_grid"],
         "N_STEPS":                       data["parameters"]["N_STEPS"],
         "scalar_interval":               data["parameters"].get("scalar_interval", 20),
         "snapshot_interval":             data["parameters"].get("snapshot_interval", 50),
         "history_deficit":               data.get("history_deficit",
-                                                  [[] for _ in range(N_SPP)]),
+                                                  [[] for _ in range(n_spp)]),
         "n_seeds_used":                  data["parameters"].get("NSEEDS", 1),
+        "N_SPP":                         n_spp,
     }
     st.session_state["soil_snapshot"]    = data.get("soil_snapshot", None)
     st.session_state["payload"]          = data
@@ -131,9 +150,9 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
                   mineralization_rate, seed_cost, seed_mass, K_biomass, sbr,
                   soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
                   sar, input_drift_scale, sigma_threshold,
-                  catastrophe_interval, catastrophe_mortality,   # ← new
-                  p_disturbance, disturbance_strength,           # ← new
-                  demo_noise_std,                                 # ← new
+                  catastrophe_interval, catastrophe_mortality,
+                  p_disturbance, disturbance_strength,
+                  demo_noise_std,
                   scalar_interval, snapshot_interval,
                   prog_offset, prog_total, prog_bar, status_el):
 
@@ -159,13 +178,13 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
         soil_availability_rate=sar,
         input_drift_scale=input_drift_scale,
         sigma_threshold=sigma_threshold,
-        # ── stochastic destabilization ──────────────────
         catastrophe_interval=catastrophe_interval,
         catastrophe_mortality=catastrophe_mortality,
         p_disturbance=p_disturbance,
         disturbance_strength=disturbance_strength,
         demo_noise_std=demo_noise_std,
     )
+    n_spp = len(spp_centers)  # ← BUG 2 FIX: use local n_spp throughout
 
     soil_snap = model.soil.numpy().copy()
 
@@ -176,11 +195,12 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
     history_agents                = []
     history_elements              = []
     history_biomass_grid          = []
-    history_spp_biomass           = [[] for _ in range(N_SPP)]
-    history_spp_fitness           = [[] for _ in range(N_SPP)]
-    history_spp_dead_fitness_mean = [[] for _ in range(N_SPP)]
-    history_spp_grid              = [[] for _ in range(N_SPP)]
-    history_deficit               = [[] for _ in range(N_SPP)]
+    history_spp_biomass           = [[] for _ in range(n_spp)]
+    history_spp_fitness           = [[] for _ in range(n_spp)]
+    history_spp_dead_fitness_mean = [[] for _ in range(n_spp)]
+    history_spp_grid              = [[] for _ in range(n_spp)]
+    history_deficit               = [[] for _ in range(n_spp)]
+    history_spp_age               = [[] for _ in range(n_spp)]
 
     mean_biomass = 0.0
 
@@ -194,7 +214,7 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
             history_agents.append(int(n_agents.numpy()))
             history_elements.append(model.get_element_pools())
             deficit = model.get_nutrient_deficit()
-            for s_id in range(N_SPP):
+            for s_id in range(n_spp):  # ← BUG 2 FIX
                 history_spp_biomass[s_id].append(
                     float(np.mean(model.get_species_biomass(s_id))))
                 fit = model.get_species_mean_fitness(s_id)
@@ -203,12 +223,13 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
                 history_spp_dead_fitness_mean[s_id].append(
                     float(dead_fit) if dead_fit is not None else None)
                 history_deficit[s_id].append(deficit[s_id].tolist())
+                history_spp_age[s_id].append(model.get_species_mean_age(s_id))
 
-        model.death_fitness_log.clear()
+        model.death_fitness_log.clear()  # ← BUG 1 FIX: inside the loop
 
-        if t % snapshot_interval == 0:
+        if t % snapshot_interval == 0:  # ← BUG 1 FIX: inside the loop
             history_biomass_grid.append(grid_total)
-            for s_id in range(N_SPP):
+            for s_id in range(n_spp):  # ← BUG 2 FIX
                 history_spp_grid[s_id].append(model.get_species_biomass(s_id))
 
         overall = (prog_offset + (t + 1) / N_STEPS) / prog_total
@@ -230,6 +251,7 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
         history_spp_dead_fitness_mean=history_spp_dead_fitness_mean,
         history_spp_grid=history_spp_grid,
         history_deficit=history_deficit,
+        history_spp_age=history_spp_age,  # ← BUG 3 FIX
     )
 
 
@@ -244,6 +266,10 @@ def _avg_grids(runs_list):
     n_snaps = len(runs_list[0])
     return [np.mean([run[i] for run in runs_list], axis=0) for i in range(n_snaps)]
 
+
+if _saved_defaults and st.session_state.get("_defaults_applied") is None:
+    _apply_config(_saved_defaults)
+    st.session_state["_defaults_applied"] = True
 
 # ─────────────────────────────────────────────
 # SIDEBAR
@@ -275,6 +301,14 @@ with st.sidebar:
 
     st.divider()
     st.header("⚙️ Simulation Config")
+
+    _prev_n_spp = st.session_state["N_SPP"]
+    N_SPP = st.number_input("Number of Species", min_value=1, max_value=10,
+                            value=st.session_state["N_SPP"], step=1, key="N_SPP")
+    if N_SPP != _prev_n_spp:
+        st.rerun()
+
+    SPP_LABELS = [f"Species {i+1}" for i in range(N_SPP)]
 
     with st.form("sim_config_form"):
 
@@ -361,7 +395,8 @@ with st.sidebar:
             row = [
                 cols[e].number_input(
                     ep.ELEMENTS[e], 0.0, 1.0,
-                    float(st.session_state.get(f"nc_{s}_{e}", DEFAULT_CENTERS[s][e])),
+                    float(st.session_state.get(f"nc_{s}_{e}",
+                                               DEFAULT_CENTERS[s][e] if s < len(DEFAULT_CENTERS) else 0.0)),
                     step=0.01, format="%.3f", key=f"nc_{s}_{e}",
                 )
                 for e in range(5)
@@ -386,7 +421,8 @@ with st.sidebar:
             st.success(f"✅ Valid — shape {SPP_COVARIANCES.shape}")
         except Exception as e:
             st.error(f"❌ {e}")
-            SPP_COVARIANCES = DEFAULT_COV
+            SPP_COVARIANCES = np.array(
+                [np.eye(5, dtype=np.float32) * 0.03 for _ in range(N_SPP)])
 
         st.divider()
         st.subheader("💾 Save Options")
@@ -395,6 +431,65 @@ with st.sidebar:
         run_btn = st.form_submit_button(
             "▶ Run Simulation", use_container_width=True, type="primary"
         )
+
+    st.divider()
+    if st.button("⭐ Set as default config", use_container_width=True,
+                 help="Saves current sidebar config as the startup default."):
+        _n = st.session_state.get("N_SPP", 5)
+        _default = {
+            "N_SPP":                  _n,
+            "H":                      st.session_state.get("H", 100),
+            "W":                      st.session_state.get("W", 100),
+            "MAX_AGENTS":             st.session_state.get("MAX_AGENTS", 150000),
+            "N_STEPS":                st.session_state.get("N_STEPS", 1500),
+            "SEED":                   st.session_state.get("SEED", 35),
+            "NSEEDS":                 st.session_state.get("NSEEDS", 1),
+            "scalar_interval":        st.session_state.get("scalar_interval", 20),
+            "snapshot_interval":      st.session_state.get("snapshot_interval", 50),
+            "growth_rate":            st.session_state.get("growth_rate", 0.45),
+            "respiration_rate":       st.session_state.get("respiration_rate", 0.015),
+            "turnover_rate":          st.session_state.get("turnover_rate", 0.03),
+            "mineralization_rate":    st.session_state.get("mineralization_rate", 0.05),
+            "seed_cost":              st.session_state.get("seed_cost", 0.02),
+            "seed_mass":              st.session_state.get("seed_mass", 0.02),
+            "K_biomass":              st.session_state.get("K_biomass", 2.5),
+            "soil_input_rate":        st.session_state.get("soil_input_rate", 0.5),
+            "sigma_threshold":        st.session_state.get("sigma_threshold", 3.0),
+            "soil_pool_mean":         st.session_state.get("soil_pool_mean", 1.5),
+            "soil_pool_std":          st.session_state.get("soil_pool_std", 0.1),
+            "soil_ratio_noise":       st.session_state.get("soil_ratio_noise", 0.05),
+            "input_drift_scale":      st.session_state.get("input_drift_scale", 0.08),
+            "catastrophe_interval":   st.session_state.get("catastrophe_interval", 200),
+            "catastrophe_mortality":  st.session_state.get("catastrophe_mortality", 0.4),
+            "p_disturbance":          st.session_state.get("p_disturbance", 0.01),
+            "disturbance_strength":   st.session_state.get("disturbance_strength", 0.7),
+            "demo_noise_std":         st.session_state.get("demo_noise_std", 0.003),
+            "soil_base_ratio":        [
+                st.session_state.get("sbr_n", 0.35),
+                st.session_state.get("sbr_p", 0.10),
+                st.session_state.get("sbr_k", 0.35),
+                st.session_state.get("sbr_o", 0.10),
+            ],
+            "soil_availability_rate": [
+                st.session_state.get("sar_n", 0.4),
+                st.session_state.get("sar_p", 0.1),
+                st.session_state.get("sar_k", 0.1),
+                st.session_state.get("sar_o", 0.3),
+            ],
+            "initial_seeds": [
+                st.session_state.get(f"seeds_{i}", 10) for i in range(_n)
+            ],
+            "spp_centers": [
+                [st.session_state.get(f"nc_{s}_{e}", 0.0) for e in range(5)]
+                for s in range(_n)
+            ],
+            "cov_code": st.session_state.get("cov_code", DEFAULT_COV_CODE),
+        }
+        os.makedirs(os.path.dirname(DEFAULT_CONFIG_PATH), exist_ok=True)
+        with open(DEFAULT_CONFIG_PATH, "w") as f:
+            json.dump(_default, f, indent=2)
+        st.success(f"✅ Default config saved to `{DEFAULT_CONFIG_PATH}`")
+
 
 # ─────────────────────────────────────────────
 # SIMULATION — ensemble loop
@@ -417,7 +512,6 @@ if run_btn:
             soil_ratio_noise=soil_ratio_noise, soil_input_rate=soil_input_rate,
             sar=sar, input_drift_scale=input_drift_scale,
             sigma_threshold=sigma_threshold,
-            # ── stochastic destabilization ──────────────────
             catastrophe_interval=catastrophe_interval,
             catastrophe_mortality=catastrophe_mortality,
             p_disturbance=p_disturbance,
@@ -426,6 +520,7 @@ if run_btn:
             scalar_interval=scalar_interval, snapshot_interval=snapshot_interval,
             prog_offset=i, prog_total=NSEEDS,
             prog_bar=prog, status_el=status,
+            # ← BUG 4 FIX: removed history_spp_age=history_spp_age
         )
         all_runs.append(result)
 
@@ -442,6 +537,10 @@ if run_btn:
 
     history_spp_fitness = [
         _avg_nullable([r["history_spp_fitness"][s] for r in all_runs])
+        for s in range(N_SPP)
+    ]
+    history_spp_age = [
+        np.mean([r["history_spp_age"][s] for r in all_runs], axis=0).tolist()
         for s in range(N_SPP)
     ]
     history_spp_dead_fitness_mean = [
@@ -480,10 +579,12 @@ if run_btn:
         history_spp_dead_fitness_mean=history_spp_dead_fitness_mean,
         history_deficit=history_deficit,
         history_spp_grid=history_spp_grid,
+        history_spp_age=history_spp_age,
         N_STEPS=N_STEPS,
         scalar_interval=scalar_interval,
         snapshot_interval=snapshot_interval,
         n_seeds_used=NSEEDS,
+        N_SPP=N_SPP,
     )
 
     st.session_state["payload"] = {
@@ -507,7 +608,6 @@ if run_btn:
             "soil_ratio_noise": soil_ratio_noise,
             "input_drift_scale": input_drift_scale,
             "sigma_threshold": sigma_threshold,
-            # ── stochastic destabilization ──────────────────
             "catastrophe_interval":  catastrophe_interval,
             "catastrophe_mortality": catastrophe_mortality,
             "p_disturbance":         p_disturbance,
@@ -517,6 +617,7 @@ if run_btn:
             "scalar_interval": scalar_interval,
             "snapshot_interval": snapshot_interval,
             "cov_code": cov_code,
+            "N_SPP": N_SPP,
         },
         "history_biomass":               history_biomass,
         "history_elements":              history_elements,
@@ -530,17 +631,23 @@ if run_btn:
         "history_spp_count":             history_agents,
         "history_deficit":               history_deficit,
         "soil_snapshot":                 soil_snapshot,
+        "history_spp_age":               history_spp_age,
     }
 
     st.session_state["pkl_default_name"] = f"sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     st.session_state["run_count"] += 1
     st.session_state["ran"]        = True
 
+
 # ─────────────────────────────────────────────
 # RESULTS
 # ─────────────────────────────────────────────
 if st.session_state["ran"]:
     res  = st.session_state["results"]
+
+    RES_N_SPP      = res.get("N_SPP", N_SPP)
+    RES_SPP_LABELS = [f"Species {i+1}" for i in range(RES_N_SPP)]
+
     soil = st.session_state["soil_snapshot"]
 
     scalar_interval   = res.get("scalar_interval",   20)
@@ -588,48 +695,36 @@ if st.session_state["ran"]:
         deficit_data = res.get("history_deficit", [])
         if any(len(d) > 0 for d in deficit_data):
             st.subheader("Unmet Nutrient Demand per Species")
-            st.plotly_chart(ep.plot_nutrient_deficit(steps_scalar, deficit_data, SPP_LABELS),
+            st.plotly_chart(ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS),
                             use_container_width=True)
 
     with tab_spp:
         st.subheader("Per-Species Mean Biomass"
                      + (f" (avg over {n_seeds_used} seeds)" if n_seeds_used > 1 else ""))
         st.plotly_chart(ep.plot_species_biomass(steps_scalar, res["history_spp_biomass"],
-                                                SPP_LABELS), use_container_width=True)
+                                                RES_SPP_LABELS), use_container_width=True)
 
         if n_seeds_used > 1 and "history_spp_biomass_std" in res:
-            fig_std = go.Figure()
-            colors  = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
-            for s in range(N_SPP):
-                mu  = np.array(res["history_spp_biomass"][s])
-                std = np.array(res["history_spp_biomass_std"][s])
-                c   = colors[s % len(colors)]
-                fig_std.add_trace(go.Scatter(
-                    x=np.concatenate([steps_scalar, steps_scalar[::-1]]),
-                    y=np.concatenate([mu + std, (mu - std)[::-1]]),
-                    fill="toself", fillcolor=c, opacity=0.15,
-                    line=dict(color="rgba(0,0,0,0)"), showlegend=False,
-                ))
-                fig_std.add_trace(go.Scatter(
-                    x=steps_scalar, y=mu, name=SPP_LABELS[s],
-                    line=dict(color=c, width=2),
-                ))
-            fig_std.update_layout(
-                title="Per-Species Biomass ± 1 SD across seeds",
-                xaxis_title="Step", yaxis_title="Mean Biomass",
-                template="plotly_white",
-            )
-            st.plotly_chart(fig_std, use_container_width=True)
+            st.plotly_chart(ep.plot_species_biomass_std(
+                steps_scalar, res["history_spp_biomass"],
+                res["history_spp_biomass_std"], RES_SPP_LABELS),
+                use_container_width=True)
 
         if any(len(f) > 0 for f in res["history_spp_fitness"]):
             st.subheader("Per-Species Mean Fitness")
             st.plotly_chart(ep.plot_species_fitness(steps_scalar, res["history_spp_fitness"],
-                                                    SPP_LABELS), use_container_width=True)
+                                                    RES_SPP_LABELS), use_container_width=True)
 
         dead = res.get("history_spp_dead_fitness_mean", [])
         if any(len(f) > 0 for f in dead):
             st.subheader("Mean Fitness at Time of Death")
-            st.plotly_chart(ep.plot_dead_fitness(steps_scalar, dead, SPP_LABELS),
+            st.plotly_chart(ep.plot_dead_fitness(steps_scalar, dead, RES_SPP_LABELS),
+                            use_container_width=True)
+
+        spp_age = res.get("history_spp_age", [])  # ← BUG 5 FIX: render age plot
+        if any(len(a) > 0 for a in spp_age):
+            st.subheader("Mean Agent Age per Species")
+            st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS),
                             use_container_width=True)
 
     with tab_maps:
@@ -645,7 +740,7 @@ if st.session_state["ran"]:
                 ep.plot_spatial_maps(
                     res["history_biomass_grid"],
                     res["history_spp_grid"],
-                    snap_i, actual_step, SPP_LABELS,
+                    snap_i, actual_step, RES_SPP_LABELS,
                 ),
                 use_container_width=True,
             )
