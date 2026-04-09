@@ -426,3 +426,103 @@ class HybridEcosystem:
             return 0.0
         data = tf.gather_nd(self.agents, active_idx)
         return float(tf.reduce_mean(data[:, 10]).numpy())
+
+    def get_agent_elemental_dissimilarity_index_tf(self, eps=1e-6):
+        # All living agents
+        active_idx = tf.where(self.agents[:, 9] > 0.5)
+        n_active   = tf.shape(active_idx)[0]
+        if n_active < 2:
+            return 0.0
+
+        data = tf.gather_nd(self.agents, active_idx)   # (N, 11)
+        X    = data[:, 4:9]                            # (N, 5) elementomes
+        Nf   = tf.cast(tf.shape(X)[0], tf.float32)
+        Ef   = tf.cast(tf.shape(X)[1], tf.float32)
+
+        # Community-wide covariance Σ
+        mean = tf.reduce_mean(X, axis=0, keepdims=True)    # (1, E)
+        Xc   = X - mean                                    # (N, E)
+        cov  = tf.matmul(Xc, Xc, transpose_a=True) / tf.maximum(Nf - 1.0, 1.0)
+        cov  = cov + tf.eye(tf.shape(cov)[0], dtype=cov.dtype) * eps
+        inv_cov = tf.linalg.inv(cov)                       # (E, E)
+
+        # Pairwise Mahalanobis distances between agents
+        Xi   = tf.expand_dims(X, 1)        # (N, 1, E)
+        Xj   = tf.expand_dims(X, 0)        # (1, N, E)
+        diff = Xi - Xj                     # (N, N, E)
+
+        left      = tf.einsum('ije,ef->ijf', diff, inv_cov)   # (N, N, E)
+        mahal_sq  = tf.einsum('ije,ije->ij', left, diff)      # (N, N)
+        Dm        = tf.sqrt(tf.maximum(mahal_sq, 0.0))        # (N, N)
+
+        # Equal weights p_i = 1/N
+        p    = tf.fill([tf.shape(X)[0]], 1.0 / Nf)            # (N,)
+        p_i  = tf.expand_dims(p, 1)                           # (N, 1)
+        p_j  = tf.expand_dims(p, 0)                           # (1, N)
+        Pmin = tf.minimum(p_i, p_j)                           # (N, N)
+
+        EDm = tf.reduce_sum(Dm * Pmin) / Ef                   # scalar
+        return float(EDm.numpy())
+
+
+
+    def get_species_elemental_dissimilarity_index_tf(self, eps=1e-6):
+        # aggregate living agents by species
+        active_idx = tf.where(self.agents[:, 9] > 0.5)
+        if tf.shape(active_idx)[0] < 2:
+            return 0.0
+
+        data = tf.gather_nd(self.agents, active_idx)      # (N, 11)
+        spp_ids = tf.cast(data[:, 2], tf.int32)
+        masses  = data[:, 3]
+        elems   = data[:, 4:9]                            # (N, 5)
+
+        S = self.N_spp
+        # total biomass per species
+        tot_mass = tf.math.unsorted_segment_sum(
+            masses, spp_ids, num_segments=S
+        )                                                 # (S,)
+        alive_mask = tot_mass > 0
+        if not bool(tf.reduce_any(alive_mask)):
+            return 0.0
+
+        # biomass‑weighted mean elementome per species
+        mass_exp = tf.expand_dims(masses, 1)              # (N,1)
+        num = tf.math.unsorted_segment_sum(
+            mass_exp * elems, spp_ids, num_segments=S
+        )                                                 # (S,5)
+        mean_elem = num / tf.maximum(tf.expand_dims(tot_mass, 1), 1e-9)  # (S,5)
+
+        # keep only species that are present
+        mean_elem = tf.boolean_mask(mean_elem, alive_mask)  # (S_eff,5)
+        p = tf.boolean_mask(tot_mass, alive_mask)
+        p = p / tf.reduce_sum(p)                            # (S_eff,)
+
+        S_eff = tf.shape(mean_elem)[0]
+        E     = tf.cast(tf.shape(mean_elem)[1], tf.float32)
+        if S_eff < 2:
+            return 0.0
+
+        # community covariance Σ from species means
+        m_mean = tf.reduce_mean(mean_elem, axis=0, keepdims=True)  # (1,5)
+        Xc     = mean_elem - m_mean                                # (S_eff,5)
+        n_eff  = tf.cast(S_eff, tf.float32)
+        cov    = tf.matmul(Xc, Xc, transpose_a=True) / tf.maximum(n_eff - 1.0, 1.0)
+        cov    = cov + tf.eye(tf.shape(cov)[0], dtype=cov.dtype) * eps
+        inv_cov = tf.linalg.inv(cov)                               # (5,5)
+
+        # pairwise Mahalanobis distances between species
+        Xi   = tf.expand_dims(mean_elem, 1)     # (S_eff,1,5)
+        Xj   = tf.expand_dims(mean_elem, 0)     # (1,S_eff,5)
+        diff = Xi - Xj                          # (S_eff,S_eff,5)
+        left = tf.einsum('ije,ef->ijf', diff, inv_cov)
+        mahal_sq = tf.einsum('ije,ije->ij', left, diff)
+        Dm = tf.sqrt(tf.maximum(mahal_sq, 0.0)) # (S_eff,S_eff)
+
+        # ED_M with weights min(p_i, p_j)
+        p_i = tf.expand_dims(p, 1)              # (S_eff,1)
+        p_j = tf.expand_dims(p, 0)              # (1,S_eff)
+        Pmin = tf.minimum(p_i, p_j)             # (S_eff,S_eff)
+
+        EDm = tf.reduce_sum(Dm * Pmin) / E
+        return float(EDm.numpy())

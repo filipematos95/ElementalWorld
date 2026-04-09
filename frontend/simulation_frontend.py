@@ -134,6 +134,7 @@ def _apply_everything(data: dict):
                                                   [[] for _ in range(n_spp)]),
         "n_seeds_used":                  data["parameters"].get("NSEEDS", 1),
         "N_SPP":                         n_spp,
+        "history_spp_elemental_dissimilarity": data.get("history_spp_elemental_dissimilarity", []),
     }
     st.session_state["soil_snapshot"]    = data.get("soil_snapshot", None)
     st.session_state["payload"]          = data
@@ -201,6 +202,7 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
     history_spp_grid              = [[] for _ in range(n_spp)]
     history_deficit               = [[] for _ in range(n_spp)]
     history_spp_age               = [[] for _ in range(n_spp)]
+    history_spp_elemental_dissimilarity = []
 
     mean_biomass = 0.0
 
@@ -214,6 +216,9 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
             history_agents.append(int(n_agents.numpy()))
             history_elements.append(model.get_element_pools())
             deficit = model.get_nutrient_deficit()
+            history_spp_elemental_dissimilarity.append(
+                model.get_species_elemental_dissimilarity_index_tf())
+
             for s_id in range(n_spp):  # ← BUG 2 FIX
                 history_spp_biomass[s_id].append(
                     float(np.mean(model.get_species_biomass(s_id))))
@@ -251,7 +256,9 @@ def _run_one_seed(seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
         history_spp_dead_fitness_mean=history_spp_dead_fitness_mean,
         history_spp_grid=history_spp_grid,
         history_deficit=history_deficit,
-        history_spp_age=history_spp_age,  # ← BUG 3 FIX
+        history_spp_age=history_spp_age,
+        history_spp_elemental_dissimilarity=history_spp_elemental_dissimilarity,
+        # ← BUG 3 FIX
     )
 
 
@@ -527,6 +534,9 @@ if run_btn:
     history_biomass  = np.mean([r["history_biomass"]  for r in all_runs], axis=0).tolist()
     history_agents   = np.mean([r["history_agents"]   for r in all_runs], axis=0).astype(int).tolist()
     history_elements = np.mean([r["history_elements"] for r in all_runs], axis=0)
+    history_spp_elemental_dissimilarity = np.mean(
+        [r["history_spp_elemental_dissimilarity"] for r in all_runs], axis=0
+    ).tolist()
 
     history_spp_biomass     = []
     history_spp_biomass_std = []
@@ -577,6 +587,7 @@ if run_btn:
         history_spp_biomass_std=history_spp_biomass_std,
         history_spp_fitness=history_spp_fitness,
         history_spp_dead_fitness_mean=history_spp_dead_fitness_mean,
+        history_spp_elemental_dissimilarity=history_spp_elemental_dissimilarity,
         history_deficit=history_deficit,
         history_spp_grid=history_spp_grid,
         history_spp_age=history_spp_age,
@@ -618,6 +629,7 @@ if run_btn:
             "snapshot_interval": snapshot_interval,
             "cov_code": cov_code,
             "N_SPP": N_SPP,
+            "history_spp_elemental_dissimilarity": history_spp_elemental_dissimilarity,
         },
         "history_biomass":               history_biomass,
         "history_elements":              history_elements,
@@ -698,6 +710,14 @@ if st.session_state["ran"]:
             st.plotly_chart(ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS),
                             use_container_width=True)
 
+        ed_vals = res.get("history_spp_elemental_dissimilarity", [])
+        if len(ed_vals) > 0:
+            st.subheader("SPP Mean Elemental Dissimilarity Over Time")
+            st.plotly_chart(
+                ep.plot_spp_elemental_dissimilarity(steps_scalar, ed_vals),
+                use_container_width=True,
+            )
+
     with tab_spp:
         st.subheader("Per-Species Mean Biomass"
                      + (f" (avg over {n_seeds_used} seeds)" if n_seeds_used > 1 else ""))
@@ -726,6 +746,7 @@ if st.session_state["ran"]:
             st.subheader("Mean Agent Age per Species")
             st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS),
                             use_container_width=True)
+
 
     with tab_maps:
         @st.fragment
@@ -777,3 +798,4 @@ if st.session_state["ran"]:
         mime="application/octet-stream",
         use_container_width=True,
     )
+

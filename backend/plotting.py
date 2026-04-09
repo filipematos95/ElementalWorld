@@ -257,3 +257,23 @@ def plot_species_age(steps: np.ndarray, history_spp_age: list,
         template="plotly_white", height=500,
     )
     return fig
+
+def plot_spp_elemental_dissimilarity(steps, values):
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=steps,
+        y=values,
+        mode="lines",
+        name="SPP elemental dissimilarity",
+        line=dict(width=3, color="#8e44ad")
+    ))
+    fig.update_layout(
+        title="SPP Mean Elemental Dissimilarity Over Time",
+        xaxis_title="Step",
+        yaxis_title="Mahalanobis-based ED (SPP means)",
+        template="plotly_white",
+        height=420,
+    )
+    return fig
