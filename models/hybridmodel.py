@@ -11,6 +11,8 @@ class HybridEcosystem:
                  input_drift_scale=0.08, soil_availability_rate=[1.0, 1.0, 1.0, 1.0],
                  sigma_threshold=3.0,
                  catastrophe_interval=200, catastrophe_mortality=0.4,
+                 weak_disturbance_interval=0, weak_disturbance_mortality=0.4,
+                 strong_disturbance_interval=0, strong_disturbance_mortality=0.4,
                  p_disturbance=0.01, disturbance_radius=8, disturbance_strength=0.7,
                  demo_noise_std=0.003):
 
@@ -35,7 +37,37 @@ class HybridEcosystem:
         else:
             self.soil_base_ratio = np.array(soil_base_ratio, dtype=np.float32)
 
-        noise      = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
+
+
+
+
+        raw_noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
+
+        kernel_size = 3
+        sigma = 1.0
+
+        ax = tf.range(kernel_size, dtype=tf.float32) - (kernel_size - 1)/2.0
+        gauss_1d = tf.exp(-0.5 * (ax / sigma)**2)
+        gauss_1d = gauss_1d / tf.reduce_sum(gauss_1d)
+
+        gauss_2d = gauss_1d[:, None] * gauss_1d[None, :]          # (k, k)
+        gauss_2d = gauss_2d[:, :, tf.newaxis, tf.newaxis]         # (k, k, 1, 1)
+        gauss_2d = tf.tile(gauss_2d, [1, 1, 4, 1])                # (k, k, 4, 1) depthwise
+
+        raw_noise_4d = raw_noise[tf.newaxis, ...]                 # (1, H, W, 4)
+
+        smoothed_noise = tf.nn.depthwise_conv2d(
+            raw_noise_4d,
+            gauss_2d,
+            strides=[1, 1, 1, 1],
+            padding="SAME"
+        )[0]                                                      # (H, W, 4)
+
+        std_before = tf.math.reduce_std(smoothed_noise)
+        smoothed_noise = smoothed_noise * (soil_ratio_noise / (std_before + 1e-9))
+
+        alpha = 0.5  # 0 = pure raw, 1 = pure smooth; try 0.3–0.7
+        noise = alpha * smoothed_noise + (1.0 - alpha) * raw_noise
         base_tiled = tf.tile(
             tf.constant(self.soil_base_ratio, dtype=tf.float32)[tf.newaxis, tf.newaxis, :],
             [self.H, self.W, 1])
@@ -74,7 +106,14 @@ class HybridEcosystem:
         self.disturbance_radius    = disturbance_radius
         self.disturbance_strength  = disturbance_strength
         self.demo_noise_std        = demo_noise_std
+        self.weak_disturbance_interval = weak_disturbance_interval
+        self.weak_disturbance_mortality = weak_disturbance_mortality
+
+        self.strong_disturbance_interval = strong_disturbance_interval
+        self.strong_disturbance_mortality = strong_disturbance_mortality
         self.step_count            = tf.Variable(0, dtype=tf.int32)
+
+
 
     # ──────────────────────────────────────────────────────────────────────────
     def add_initial_seeds(self, count=50, species_id=0):
@@ -108,6 +147,7 @@ class HybridEcosystem:
         inorg_padded = tf.pad(
             inorg_curr[tf.newaxis, ...],
             [[0, 0], [1, 1], [1, 1], [0, 0]], mode='SYMMETRIC')
+
         inorg_diff = tf.nn.depthwise_conv2d(
             inorg_padded, self.diff_kernel, [1, 1, 1, 1], "VALID")[0]
 
@@ -223,15 +263,53 @@ class HybridEcosystem:
         maint    = mass * self.respiration_rate
         fin_mass = mass + realized_growth - maint
 
+        # Catastrophes
+
         demo_noise = tf.random.normal(tf.shape(fin_mass), mean=0.0, stddev=self.demo_noise_std)
         fin_mass   = fin_mass + demo_noise
         alive      = tf.cast(fin_mass > 0.01, tf.float32)
 
+
         self.step_count.assign_add(1)
-        is_catastrophe = tf.equal(self.step_count % self.catastrophe_interval, 0)
-        survival_roll  = tf.cast(
-            tf.random.uniform(tf.shape(alive)) > self.catastrophe_mortality, tf.float32)
-        alive = tf.where(is_catastrophe, alive * survival_roll, alive)
+
+        # 1)  global uniform catastrophe — keep it
+        if self.catastrophe_interval > 0:
+            is_catastrophe = tf.equal(self.step_count % self.catastrophe_interval, 0)
+            survival_roll_cat = tf.cast(
+                tf.random.uniform(tf.shape(alive)) > self.catastrophe_mortality,
+                tf.float32
+            )
+            alive = tf.where(is_catastrophe, alive * survival_roll_cat, alive)
+
+        # 2) weak-filter disturbance — low niche fitness dies more
+        if self.weak_disturbance_interval > 0:
+            is_weak_disturbance = tf.equal(
+                self.step_count % self.weak_disturbance_interval, 0
+            )
+            alpha_weak = 2.0
+            p_die_weak = self.weak_disturbance_mortality * tf.pow(1.0 - niche_fitness, alpha_weak)
+            survival_roll_weak = tf.cast(
+                tf.random.uniform(tf.shape(alive)) > p_die_weak,
+                tf.float32
+            )
+            alive = tf.where(is_weak_disturbance, alive * survival_roll_weak, alive)
+
+        # 3) strong-filter disturbance — high mass dies more
+        if self.strong_disturbance_interval > 0:
+            is_strong_disturbance = tf.equal(
+                self.step_count % self.strong_disturbance_interval, 0
+            )
+            mass_min = tf.reduce_min(fin_mass)
+            mass_max = tf.reduce_max(fin_mass)
+            strength_score = (fin_mass - mass_min) / (mass_max - mass_min + 1e-9)
+
+            beta_strong = 2.0
+            p_die_strong = self.strong_disturbance_mortality * tf.pow(strength_score, beta_strong)
+            survival_roll_strong = tf.cast(
+                tf.random.uniform(tf.shape(alive)) > p_die_strong,
+                tf.float32
+            )
+            alive = tf.where(is_strong_disturbance, alive * survival_roll_strong, alive)
 
         # ← AGE: increment age for survivors, reset to 0 for dead
         new_age = (age + 1.0) * alive
