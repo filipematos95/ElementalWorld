@@ -1,6 +1,6 @@
 # backend/plotting.py
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+import plotly.subplots as sp
 import numpy as np
 
 NUTRIENT_NAMES = ["Nitrogen (N)", "Phosphorus (P)", "Potassium (K)", "Oxygen (O)"]
@@ -11,7 +11,7 @@ SPP_COLORS     = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
 
 
 def plot_soil(soil: np.ndarray) -> go.Figure:
-    fig = make_subplots(rows=2, cols=2, subplot_titles=NUTRIENT_NAMES,
+    fig = sp.make_subplots(rows=2, cols=2, subplot_titles=NUTRIENT_NAMES,
                         horizontal_spacing=0.15, vertical_spacing=0.15)
     for idx, (row, col) in enumerate([(1,1), (1,2), (2,1), (2,2)]):
         fig.add_trace(
@@ -62,7 +62,7 @@ def plot_element_pools(steps: np.ndarray, elem_arr: np.ndarray) -> go.Figure:
     pool_labels = ELEMENTS[:n_pools]
     steps_list  = steps.tolist()
 
-    fig = make_subplots(rows=1, cols=n_pools, subplot_titles=pool_labels)
+    fig = sp.make_subplots(rows=1, cols=n_pools, subplot_titles=pool_labels)
     for i, label in enumerate(pool_labels):
         fig.add_trace(
             go.Scatter(
@@ -109,52 +109,116 @@ def plot_species_fitness(steps: np.ndarray, history_spp_fitness: list,
     return fig
 
 
-def plot_spatial_maps(history_biomass_grid: list, history_spp_grid: list,
-                      snap_i: int, actual_step: int, spp_labels: list) -> go.Figure:
-    n_spp  = len(spp_labels)
-    titles = [f"Total Biomass — t={actual_step}"] + \
-             [f"{l} — t={actual_step}" for l in spp_labels]
-    fig = make_subplots(rows=1, cols=n_spp + 1, subplot_titles=titles,
-                        horizontal_spacing=0.06)
+def plot_spatial_maps(history_biomass_grid: list,
+                      history_spp_grid: list,
+                      snap_i: int,
+                      actual_step: int,
+                      spp_labels: list,
+                      mixed_grid: np.ndarray | None = None) -> go.Figure:
+    n_spp = len(spp_labels)
+    ncols = max(n_spp, 2)
 
+    row1_titles = [f"Total Biomass — t={actual_step}",
+                   f"Species Richness — t={actual_step}" if mixed_grid is not None else ""]
+    row1_titles += [""] * (ncols - len(row1_titles))
+    row2_titles = [f"{label} — t={actual_step}" for label in spp_labels]
+    row2_titles += [""] * (ncols - len(row2_titles))
+
+    fig = sp.make_subplots(
+        rows=2,
+        cols=ncols,
+        subplot_titles=row1_titles + row2_titles,
+        horizontal_spacing=0.04,
+        vertical_spacing=0.12,
+    )
+
+    # Row 1
     fig.add_trace(
         go.Heatmap(
             z=np.array(history_biomass_grid[snap_i]).tolist(),
-            colorscale="YlGn",
             coloraxis="coloraxis1",
             name="Total Biomass",
         ),
         row=1, col=1
     )
+
+    if mixed_grid is not None:
+        fig.add_trace(
+            go.Heatmap(
+                z=np.array(mixed_grid).tolist(),
+                coloraxis="coloraxis2",
+                name="Species Richness",
+            ),
+            row=1, col=2
+        )
+
+    # Row 2: all species share one color scale
     for s_id, label in enumerate(spp_labels):
         fig.add_trace(
             go.Heatmap(
                 z=np.array(history_spp_grid[s_id][snap_i]).tolist(),
-                colorscale="Hot",
-                coloraxis=f"coloraxis{s_id + 2}",
-                reversescale=True,
+                coloraxis="coloraxis3",
                 name=label,
             ),
-            row=1, col=s_id + 2
+            row=2, col=s_id + 1
         )
 
-    coloraxis_settings = {
-        f"coloraxis{i+1}": dict(
-            colorscale="YlGn" if i == 0 else "Hot",
+    # Compute approximate subplot widths in paper coordinates
+    # good enough for consistent placement
+    left_margin = 0.0
+    right_panel_end = 1.0
+    col_w = 1.0 / ncols
+
+    # centers of rows
+    y_row1 = 0.79
+    y_row2 = 0.21
+
+    # bars just to the right of the relevant subplot blocks
+    x_biomass  = col_w * 1 - 0.01
+    x_richness = col_w * 2 - 0.01
+    x_species  = 1.02
+
+    fig.update_layout(
+        template="plotly_white",
+        height=820,
+        margin=dict(l=20, r=120, t=70, b=20),
+
+        coloraxis1=dict(
+            colorscale="YlGn",
             colorbar=dict(
-                x=round((i + 1) / (n_spp + 1) - 0.02, 2),
-                len=0.9,
+                title="Biomass",
+                x=x_biomass,
+                y=y_row1,
+                len=0.30,
                 thickness=12,
-            )
-        )
-        for i in range(n_spp + 1)
-    }
+            ),
+        ),
 
-    fig.update_layout(height=450, template="plotly_white", **coloraxis_settings)
+        coloraxis2=dict(
+            colorscale="Viridis",
+            colorbar=dict(
+                title="Richness",
+                x=x_richness,
+                y=y_row1,
+                len=0.30,
+                thickness=12,
+            ),
+        ),
+
+        coloraxis3=dict(
+            colorscale="Hot",
+            colorbar=dict(
+                title="Species biomass",
+                x=x_species,
+                y=y_row2,
+                len=0.36,
+                thickness=14,
+            ),
+        ),
+    )
+
     fig.update_yaxes(autorange="reversed")
     return fig
-
-
 def plot_dead_fitness(steps: np.ndarray, history_spp_dead_fitness_mean: list,
                       spp_labels: list) -> go.Figure:
     fig = go.Figure()
@@ -187,7 +251,7 @@ def plot_nutrient_deficit(steps: np.ndarray, history_deficit: list,
     nutrient_labels = ["N", "P", "K", "O"]
     nutrient_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
 
-    fig = make_subplots(rows=1, cols=n_spp, subplot_titles=spp_labels,
+    fig = sp.make_subplots(rows=1, cols=n_spp, subplot_titles=spp_labels,
                         shared_yaxes=True)
 
     for s_id, (data, label) in enumerate(zip(history_deficit, spp_labels)):
@@ -276,4 +340,124 @@ def plot_spp_elemental_dissimilarity(steps, values):
         template="plotly_white",
         height=420,
     )
+    return fig
+
+
+def plot_covariance_matrices(covs, labels=None, dim_labels=None):
+    n = len(covs)
+    labels = labels or [f"Species {i+1}" for i in range(n)]
+    dim_labels = dim_labels or ["C", "N", "P", "K", "O"]
+
+    fig = sp.make_subplots(
+        rows=1,
+        cols=n,
+        subplot_titles=labels,
+        horizontal_spacing=0.08
+    )
+
+    for i, cov in enumerate(covs, start=1):
+        fig.add_trace(
+            go.Heatmap(
+                z=cov,
+                x=dim_labels,
+                y=dim_labels,
+                colorscale="RdBu",
+                zmid=0,
+                colorbar=dict(title="cov") if i == n else None,
+                hovertemplate="X: %{x}<br>Y: %{y}<br>Cov: %{z:.5f}<extra></extra>",
+            ),
+            row=1,
+            col=i
+        )
+
+    fig.update_layout(
+        title="Covariance matrices",
+        height=400,
+        margin=dict(l=20, r=20, t=60, b=20),
+    )
+
+    fig.update_xaxes(type="category", side="top")
+    fig.update_yaxes(type="category", autorange="reversed")
+
+    return fig
+
+def plot_mahalanobis_contours(
+        cov2d,
+        mean=(0, 0),
+        xlim=(-3, 3),
+        ylim=(-3, 3),
+        n=200,
+        axis_labels=("X", "Y"),
+):
+    x = np.linspace(xlim[0], xlim[1], n)
+    y = np.linspace(ylim[0], ylim[1], n)
+    xx, yy = np.meshgrid(x, y)
+
+    pts = np.c_[xx.ravel(), yy.ravel()]
+    inv = np.linalg.inv(cov2d)
+    d2 = np.array([(p - mean) @ inv @ (p - mean) for p in pts]).reshape(xx.shape)
+
+    fig = go.Figure()
+    fig.add_trace(go.Contour(
+        x=x,
+        y=y,
+        z=d2,
+        contours=dict(showlabels=True),
+        colorscale="Viridis",
+        line_width=2,
+    ))
+
+    fig.update_layout(
+        title="Mahalanobis distance contours",
+        xaxis_title=axis_labels[0],
+        yaxis_title=axis_labels[1],
+        height=500,
+    )
+    return fig
+
+
+def plot_mixed_cells(history_spp_grid: list,
+                     snap_i: int,
+                     actual_step: int,
+                     spp_labels: list,
+                     min_frac: float = 0.0) -> go.Figure:
+    """
+    Visualize cells that contain more than one species at snapshot snap_i.
+
+    history_spp_grid: list of length N_spp, each entry is a list/array of
+                      grids over snapshots: (n_snaps, H, W).
+    min_frac: if > 0, only species contributing at least this fraction of
+              total biomass in a cell are counted as 'present'.
+    """
+    n_spp = len(spp_labels)
+
+    # stack per-species grids for this snapshot → (H, W, N_spp)
+    grids = [np.array(history_spp_grid[s_id][snap_i]) for s_id in range(n_spp)]
+    grid_spp = np.stack(grids, axis=-1)  # (H, W, N_spp)
+
+    total = grid_spp.sum(axis=-1, keepdims=True)  # (H, W, 1)
+    # guard against division by zero
+    frac = np.divide(grid_spp, total, out=np.zeros_like(grid_spp), where=total > 0)
+
+    if min_frac > 0.0:
+        present = (frac >= min_frac) & (total > 0)
+    else:
+        present = (grid_spp > 0)
+
+    richness = present.sum(axis=-1)       # (H, W) number of species per cell
+    mixed_mask = (richness >= 2).astype(float)
+
+    fig = go.Figure()
+    fig.add_trace(go.Heatmap(
+        z=mixed_mask.tolist(),
+        colorscale=[[0.0, "#f7f7f7"], [1.0, "#d62728"]],
+        colorbar=dict(title="Mixed cell"),
+        showscale=False,
+    ))
+    fig.update_layout(
+        title=f"Cells with multiple species (t={actual_step})",
+        template="plotly_white",
+        height=450,
+    )
+    fig.update_yaxes(autorange="reversed")
     return fig

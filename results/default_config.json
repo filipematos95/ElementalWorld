@@ -26,6 +26,10 @@
   "p_disturbance": 0.0,
   "disturbance_strength": 0.0,
   "demo_noise_std": 0.0,
+  "weak_disturbance_interval":120,
+  "weak_disturbance_mortality":0.5,
+  "strong_disturbance_interval":300,
+  "strong_disturbance_mortality":0.4,
   "soil_base_ratio": [
     0.45,
     0.35,

@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import streamlit as st
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from models.hybridmodel import HybridEcosystem
 import backend.plotting as ep
@@ -85,8 +86,11 @@ def _apply_config(params: dict):
         "scalar_interval", "snapshot_interval",
         "input_drift_scale", "sigma_threshold",
         "catastrophe_interval", "catastrophe_mortality",
+        "weak_disturbance_interval", "weak_disturbance_mortality",
+        "strong_disturbance_interval", "strong_disturbance_mortality",
         "p_disturbance", "disturbance_strength", "demo_noise_std",
     ]
+
     if "N_SPP" in params:
         st.session_state["N_SPP"] = int(params["N_SPP"])
     n_spp = st.session_state["N_SPP"]
@@ -95,61 +99,69 @@ def _apply_config(params: dict):
         if k in params:
             st.session_state[k] = params[k]
 
-    for key, val in zip(
-            ["sbr_n", "sbr_p", "sbr_k", "sbr_o"],
-            params.get("soil_base_ratio", [0.35, 0.1, 0.35, 0.1])
-    ):
-        st.session_state[key] = float(val)
+    if "soil_base_ratio" in params:
+        vals = params["soil_base_ratio"]
+        for key, val in zip(["sbr_n", "sbr_p", "sbr_k", "sbr_o"], vals):
+            st.session_state[key] = float(val)
 
-    for key, val in zip(
-            ["sar_n", "sar_p", "sar_k", "sar_o"],
-            params.get("soil_availability_rate", [0.4, 0.1, 0.1, 0.3])
-    ):
-        st.session_state[key] = float(val)
+    if "soil_availability_rate" in params:
+        vals = params["soil_availability_rate"]
+        for key, val in zip(["sar_n", "sar_p", "sar_k", "sar_o"], vals):
+            st.session_state[key] = float(val)
 
-    for i, n in enumerate(params.get("initial_seeds", [10] * n_spp)):
-        st.session_state[f"seeds_{i}"] = int(n)
+    if "initial_seeds" in params:
+        for i, n in enumerate(params["initial_seeds"][:n_spp]):
+            st.session_state[f"seeds_{i}"] = int(n)
 
-    for s, row in enumerate(params.get("spp_centers", DEFAULT_CENTERS)):
-        for e, val in enumerate(row):
-            st.session_state[f"nc_{s}_{e}"] = float(val)
+    if "spp_centers" in params:
+        for s, row in enumerate(params["spp_centers"][:n_spp]):
+            for e, val in enumerate(row[:5]):
+                st.session_state[f"nc_{s}_{e}"] = float(val)
 
     if "cov_code" in params:
         st.session_state["cov_code"] = params["cov_code"]
 
 
 def _apply_everything(data: dict):
-    _apply_config(data["parameters"])
-    n_spp = st.session_state["N_SPP"]
+    params = data.get("parameters", {})
+    _apply_config(params)
+
+    n_spp = int(params.get("N_SPP", st.session_state.get("N_SPP", 5)))
+
+    history_biomass = data.get("history_biomass", [])
+    history_agents = data.get("history_spp_count", data.get("history_agents", []))
+    history_elements = np.array(data.get("history_elements", []))
+    history_biomass_grid = data.get("history_biomass_grid", [])
+    history_spp_biomass = data.get("history_spp_biomass", [[] for _ in range(n_spp)])
+    history_spp_grid = data.get("history_spp_biomass_grid", data.get("history_spp_grid", [[] for _ in range(n_spp)]))
 
     st.session_state["results"] = {
-        "history_biomass": data["history_biomass"],
-        "history_agents": data["history_spp_count"],
-        "history_elements": np.array(data["history_elements"]),
-        "history_biomass_grid": data["history_biomass_grid"],
-        "history_spp_biomass": data["history_spp_biomass"],
+        "history_biomass": history_biomass,
+        "history_agents": history_agents,
+        "history_elements": history_elements,
+        "history_biomass_grid": history_biomass_grid,
+        "history_spp_biomass": data.get("history_spp_biomass", [[] for _ in range(n_spp)]),
         "history_spp_age": data.get("history_spp_age", [[] for _ in range(n_spp)]),
         "history_spp_biomass_std": data.get("history_spp_biomass_std", [[] for _ in range(n_spp)]),
         "history_spp_fitness": data.get("history_spp_fitness", [[] for _ in range(n_spp)]),
         "history_spp_dead_fitness_mean": data.get("history_spp_dead_fitness_mean", [[] for _ in range(n_spp)]),
-        "history_spp_grid": data["history_spp_biomass_grid"],
-        "N_STEPS": data.get("completed_steps", data["parameters"]["N_STEPS"]),
-        "scalar_interval": data["parameters"].get("scalar_interval", 20),
-        "snapshot_interval": data["parameters"].get("snapshot_interval", 50),
+        "history_spp_grid": history_spp_grid,
+        "N_STEPS": data.get("completed_steps", params.get("N_STEPS", st.session_state.get("N_STEPS", 0))),
+        "scalar_interval": params.get("scalar_interval", st.session_state.get("scalar_interval", 20)),
+        "snapshot_interval": params.get("snapshot_interval", st.session_state.get("snapshot_interval", 50)),
         "history_deficit": data.get("history_deficit", [[] for _ in range(n_spp)]),
-        "n_seeds_used": data["parameters"].get("NSEEDS", 1),
+        "n_seeds_used": params.get("NSEEDS", st.session_state.get("NSEEDS", 1)),
         "N_SPP": n_spp,
         "history_spp_elemental_dissimilarity": data.get("history_spp_elemental_dissimilarity", []),
     }
 
-    st.session_state["soil_snapshot"] = data.get("soil_snapshot", None)
+    st.session_state["soil_snapshot"] = data.get("soil_snapshot", st.session_state.get("soil_snapshot", None))
     st.session_state["payload"] = data
     st.session_state["loaded_final_states"] = data.get("final_states", None)
     st.session_state["loaded_completed_steps"] = data.get("completed_steps", 0)
     st.session_state["ran"] = True
     st.session_state["run_count"] += 1
     st.session_state["pkl_default_name"] = f"loaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
 
 def _make_model(
         H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
@@ -158,6 +170,8 @@ def _make_model(
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
+        weak_disturbance_interval, weak_disturbance_mortality,
+        strong_disturbance_interval, strong_disturbance_mortality,
         p_disturbance, disturbance_strength, demo_noise_std
 ):
     return HybridEcosystem(
@@ -184,6 +198,10 @@ def _make_model(
         p_disturbance=p_disturbance,
         disturbance_strength=disturbance_strength,
         demo_noise_std=demo_noise_std,
+        weak_disturbance_interval=weak_disturbance_interval,
+        weak_disturbance_mortality=weak_disturbance_mortality,
+        strong_disturbance_interval=strong_disturbance_interval,
+        strong_disturbance_mortality=strong_disturbance_mortality
     )
 
 
@@ -197,6 +215,8 @@ def _run_one_seed(
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
+        weak_disturbance_interval, weak_disturbance_mortality,
+        strong_disturbance_interval, strong_disturbance_mortality,
         p_disturbance, disturbance_strength,
         demo_noise_std,
         scalar_interval, snapshot_interval,
@@ -213,6 +233,8 @@ def _run_one_seed(
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
+        weak_disturbance_interval, weak_disturbance_mortality,
+        strong_disturbance_interval, strong_disturbance_mortality,
         p_disturbance, disturbance_strength, demo_noise_std
     )
     n_spp = len(spp_centers)
@@ -224,6 +246,9 @@ def _run_one_seed(
     else:
         model.agents.assign(resume_state["agents"])
         model.soil.assign(resume_state["soil"])
+        soil_snap = resume_state["soil"].copy()
+        if "step_count" in resume_state:
+            model.step_count.assign(resume_state["step_count"])
         soil_snap = resume_state["soil"].copy()
 
     history_biomass = []
@@ -345,7 +370,8 @@ with st.sidebar:
 
         if col_cfg.button("⚙️ Config only", use_container_width=True,
                           help="Populate sidebar parameters; does not restore plots."):
-            _apply_config(loaded_data["parameters"])
+            params = loaded_data.get("parameters", {})
+            _apply_config(params)
             st.session_state["loaded_final_states"] = loaded_data.get("final_states", None)
             st.session_state["loaded_completed_steps"] = loaded_data.get("completed_steps", 0)
             st.rerun()
@@ -437,21 +463,60 @@ with st.sidebar:
         ]
 
         st.subheader("🌩️ Stochastic Destabilization")
-        catastrophe_interval = st.slider("Catastrophe Interval", 50, 500, 200, step=50,
-                                         key="catastrophe_interval",
-                                         help="Steps between mass mortality events.")
-        catastrophe_mortality = st.slider("Catastrophe Mortality", 0.0, 0.9, 0.4, step=0.05,
-                                          key="catastrophe_mortality",
-                                          help="Fraction of agents killed each catastrophe.")
-        p_disturbance = st.slider("Disturbance Prob.", 0.0, 0.05, 0.01, step=0.005,
-                                  key="p_disturbance",
-                                  help="Probability per step of a local soil depletion patch.")
-        disturbance_strength = st.slider("Disturbance Strength", 0.0, 1.0, 0.7, step=0.05,
-                                         key="disturbance_strength",
-                                         help="Fraction of soil nutrients removed in the disturbed patch.")
-        demo_noise_std = st.slider("Demographic Noise", 0.0, 0.01, 0.003, step=0.001,
-                                   key="demo_noise_std", format="%.3f",
-                                   help="Std of random mass perturbation each step.")
+
+        st.markdown("**Uniform catastrophe**")
+        catastrophe_interval = st.slider(
+            "Catastrophe Interval", 0, 500, 200, step=10,
+            key="catastrophe_interval",
+            help="Steps between global random mortality events. Set to 0 to disable."
+        )
+        catastrophe_mortality = st.slider(
+            "Catastrophe Mortality", 0.0, 0.9, 0.4, step=0.05,
+            key="catastrophe_mortality",
+            help="Fraction of agents killed in each uniform catastrophe."
+        )
+
+        st.markdown("**Weak-filter disturbance**")
+        weak_disturbance_interval = st.slider(
+            "Weak Disturbance Interval", 0, 500, 0, step=10,
+            key="weak_disturbance_interval",
+            help="Global event where low-fitness individuals die more often. Set to 0 to disable."
+        )
+        weak_disturbance_mortality = st.slider(
+            "Weak Disturbance Mortality", 0.0, 0.9, 0.4, step=0.05,
+            key="weak_disturbance_mortality",
+            help="Maximum mortality intensity for the weak-filter disturbance."
+        )
+
+        st.markdown("**Strong-filter disturbance**")
+        strong_disturbance_interval = st.slider(
+            "Strong Disturbance Interval", 0, 500, 0, step=10,
+            key="strong_disturbance_interval",
+            help="Global event where strong individuals die more often. Set to 0 to disable."
+        )
+        strong_disturbance_mortality = st.slider(
+            "Strong Disturbance Mortality", 0.0, 0.9, 0.4, step=0.05,
+            key="strong_disturbance_mortality",
+            help="Maximum mortality intensity for the strong-filter disturbance."
+        )
+
+        st.markdown("**Local soil disturbance**")
+        p_disturbance = st.slider(
+            "Disturbance Prob.", 0.0, 0.05, 0.01, step=0.005,
+            key="p_disturbance",
+            help="Probability per step of a local soil depletion patch."
+        )
+        disturbance_strength = st.slider(
+            "Disturbance Strength", 0.0, 1.0, 0.7, step=0.05,
+            key="disturbance_strength",
+            help="Fraction of soil nutrients removed in the disturbed patch."
+        )
+
+        demo_noise_std = st.slider(
+            "Demographic Noise", 0.0, 0.01, 0.003, step=0.001,
+            key="demo_noise_std", format="%.3f",
+            help="Std of random mass perturbation each step."
+        )
 
         st.divider()
         st.subheader("🧬 Species Niche Centers")
@@ -530,6 +595,10 @@ with st.sidebar:
             "p_disturbance": st.session_state.get("p_disturbance", 0.01),
             "disturbance_strength": st.session_state.get("disturbance_strength", 0.7),
             "demo_noise_std": st.session_state.get("demo_noise_std", 0.003),
+            "weak_disturbance_interval": st.session_state.get("weak_disturbance_interval", 0),
+            "weak_disturbance_mortality": st.session_state.get("weak_disturbance_mortality", 0.4),
+            "strong_disturbance_interval": st.session_state.get("strong_disturbance_interval", 0),
+            "strong_disturbance_mortality": st.session_state.get("strong_disturbance_mortality", 0.4),
             "soil_base_ratio": [
                 st.session_state.get("sbr_n", 0.35),
                 st.session_state.get("sbr_p", 0.10),
@@ -593,6 +662,10 @@ if run_btn:
             sigma_threshold=sigma_threshold,
             catastrophe_interval=catastrophe_interval,
             catastrophe_mortality=catastrophe_mortality,
+            weak_disturbance_interval=weak_disturbance_interval,
+            weak_disturbance_mortality=weak_disturbance_mortality,
+            strong_disturbance_interval=strong_disturbance_interval,
+            strong_disturbance_mortality=strong_disturbance_mortality,
             p_disturbance=p_disturbance,
             disturbance_strength=disturbance_strength,
             demo_noise_std=demo_noise_std,
@@ -720,6 +793,10 @@ if run_btn:
             "sigma_threshold": sigma_threshold,
             "catastrophe_interval": catastrophe_interval,
             "catastrophe_mortality": catastrophe_mortality,
+            "weak_disturbance_interval": weak_disturbance_interval,
+            "weak_disturbance_mortality": weak_disturbance_mortality,
+            "strong_disturbance_interval": strong_disturbance_interval,
+            "strong_disturbance_mortality": strong_disturbance_mortality,
             "p_disturbance": p_disturbance,
             "disturbance_strength": disturbance_strength,
             "demo_noise_std": demo_noise_std,
@@ -843,6 +920,66 @@ if st.session_state["ran"]:
             st.subheader("Mean Agent Age per Species")
             st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS), use_container_width=True)
 
+        st.subheader("Covariance Matrices")
+        st.plotly_chart(ep.plot_covariance_matrices(SPP_COVARIANCES, RES_SPP_LABELS, dim_labels = ep.ELEMENTS), use_container_width=True)
+
+        element_broadness = pd.DataFrame(
+            [np.diag(cov) for cov in SPP_COVARIANCES],
+            columns=ep.ELEMENTS,
+            index=SPP_LABELS
+        )
+
+
+        element_broadness["Total"] = [np.trace(cov) for cov in SPP_COVARIANCES]
+
+        styled_broadness = (
+            element_broadness.style
+            .format("{:.5f}")
+            .background_gradient(cmap="PuBu", axis=None)
+        )
+
+        st.subheader("Species broadness by element")
+        st.table(styled_broadness)
+
+        st.subheader("Mahalanobis Covariance View")
+
+        c1, c2, c3 = st.columns([1, 1, 1])
+
+        with c1:
+            selected_species = st.selectbox(
+                "Species",
+                options=list(range(N_SPP)),
+                format_func=lambda i: SPP_LABELS[i],
+                key="cov_species",
+            )
+
+        with c2:
+            dim_x = st.selectbox(
+                "X axis",
+                options=list(range(5)),
+                format_func=lambda i: ep.ELEMENTS[i],
+                key="cov_dim_x",
+            )
+
+        with c3:
+            dim_y = st.selectbox(
+                "Y axis",
+                options=list(range(5)),
+                format_func=lambda i: ep.ELEMENTS[i],
+                index=1,
+                key="cov_dim_y",
+            )
+
+        cov2d = SPP_COVARIANCES[selected_species][np.ix_([dim_x, dim_y], [dim_x, dim_y])]
+        st.plotly_chart(
+            ep.plot_mahalanobis_contours(
+                cov2d,
+                axis_labels=(ep.ELEMENTS[dim_x], ep.ELEMENTS[dim_y])
+            ),
+            use_container_width=True,
+        )
+
+
     with tab_maps:
         @st.fragment
         def _maps_fragment():
@@ -852,15 +989,39 @@ if st.session_state["ran"]:
                 0, n_snaps - 1, n_snaps - 1, format="Step %d",
                    )
             actual_step = snap_i * snapshot_interval
+
+            # build a (H, W, N_spp) array for this snapshot
+            n_spp = len(RES_SPP_LABELS)
+            grids = [np.array(res["history_spp_grid"][s_id][snap_i])
+                     for s_id in range(n_spp)]  # each (H, W)
+            grid_spp = np.stack(grids, axis=-1)  # (H, W, N_spp)
+
+            # total biomass per cell
+            total = grid_spp.sum(axis=-1, keepdims=True)  # (H, W, 1)
+            # fractional contributions
+            frac = np.divide(
+                grid_spp, total,
+                out=np.zeros_like(grid_spp),
+                where=total > 0
+            )
+
+            # presence rule: any biomass, or set a minimum fraction if you wish
+            # present = grid_spp > 0
+            eps = 1e-9
+            present = grid_spp > eps
+            richness = present.sum(axis=-1).astype(float)
+
             st.plotly_chart(
                 ep.plot_spatial_maps(
                     res["history_biomass_grid"],
                     res["history_spp_grid"],
-                    snap_i, actual_step, RES_SPP_LABELS,
+                    snap_i,
+                    actual_step,
+                    RES_SPP_LABELS,
+                    mixed_grid=richness,
                 ),
                 use_container_width=True,
             )
-
         _maps_fragment()
 
     st.divider()
