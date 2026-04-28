@@ -89,6 +89,10 @@ def _apply_config(params: dict):
         "weak_disturbance_interval", "weak_disturbance_mortality",
         "strong_disturbance_interval", "strong_disturbance_mortality",
         "p_disturbance", "disturbance_strength", "demo_noise_std",
+        "env_field_persistence", "env_field_smoothing_passes",
+        "shock_field_persistence", "shock_field_smoothing_passes",
+        "seed_range_scale",
+        "seed_range_alpha",
     ]
 
     if "N_SPP" in params:
@@ -112,6 +116,10 @@ def _apply_config(params: dict):
     if "initial_seeds" in params:
         for i, n in enumerate(params["initial_seeds"][:n_spp]):
             st.session_state[f"seeds_{i}"] = int(n)
+
+    if "seed_mass_by_species" in params:
+        for i, val in enumerate(params["seed_mass_by_species"][:n_spp]):
+            st.session_state[f"seedmassspp{i}"] = float(val)
 
     if "spp_centers" in params:
         for s, row in enumerate(params["spp_centers"][:n_spp]):
@@ -166,13 +174,16 @@ def _apply_everything(data: dict):
 def _make_model(
         H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
-        mineralization_rate, seed_cost, seed_mass, K_biomass, sbr,
+        mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,
+        K_biomass, sbr,
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
         weak_disturbance_interval, weak_disturbance_mortality,
         strong_disturbance_interval, strong_disturbance_mortality,
-        p_disturbance, disturbance_strength, demo_noise_std
+        p_disturbance, disturbance_strength, demo_noise_std,
+        env_field_persistence, env_field_smoothing_passes,
+        shock_field_persistence, shock_field_smoothing_passes
 ):
     return HybridEcosystem(
         height=H, width=W, max_agents=MAX_AGENTS,
@@ -184,6 +195,9 @@ def _make_model(
         mineralization_rate=mineralization_rate,
         seed_cost=seed_cost,
         seed_mass=seed_mass,
+        seed_mass_by_species=seed_mass_by_species,
+        seed_range_scale=seed_range_scale,
+        seed_range_alpha=seed_range_alpha,
         K_biomass=K_biomass,
         soil_base_ratio=np.array(sbr, dtype=np.float32),
         soil_pool_mean=soil_pool_mean,
@@ -201,7 +215,11 @@ def _make_model(
         weak_disturbance_interval=weak_disturbance_interval,
         weak_disturbance_mortality=weak_disturbance_mortality,
         strong_disturbance_interval=strong_disturbance_interval,
-        strong_disturbance_mortality=strong_disturbance_mortality
+        strong_disturbance_mortality=strong_disturbance_mortality,
+        env_field_persistence=env_field_persistence,
+        env_field_smoothing_passes=env_field_smoothing_passes,
+        shock_field_persistence=shock_field_persistence,
+        shock_field_smoothing_passes=shock_field_smoothing_passes,
     )
 
 
@@ -219,8 +237,11 @@ def _run_one_seed(
         strong_disturbance_interval, strong_disturbance_mortality,
         p_disturbance, disturbance_strength,
         demo_noise_std,
+        env_field_persistence, env_field_smoothing_passes,
+        shock_field_persistence, shock_field_smoothing_passes,
         scalar_interval, snapshot_interval,
         prog_offset, prog_total, prog_bar, status_el,
+        seed_mass_by_species, seed_range_scale, seed_range_alpha,
         resume_state=None, start_step=0
 ):
     tf.random.set_seed(seed)
@@ -229,13 +250,15 @@ def _run_one_seed(
     model = _make_model(
         H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
-        mineralization_rate, seed_cost, seed_mass, K_biomass, sbr,
+        mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,K_biomass, sbr,
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
         weak_disturbance_interval, weak_disturbance_mortality,
         strong_disturbance_interval, strong_disturbance_mortality,
-        p_disturbance, disturbance_strength, demo_noise_std
+        p_disturbance, disturbance_strength, demo_noise_std,
+        env_field_persistence, env_field_smoothing_passes,
+        shock_field_persistence, shock_field_smoothing_passes
     )
     n_spp = len(spp_centers)
 
@@ -431,6 +454,17 @@ with st.sidebar:
         sigma_threshold = st.slider("Sigma Threshold", 0.1, 5.0, 3.0, key="sigma_threshold", step=0.1,
                                     help="Niche fitness sensitivity. Lower = steeper fitness drop away from niche center.")
 
+        st.subheader("Seed Dispersal")
+        seed_range_scale = st.slider("Seed Range Scale", 0.1, 50.0, 10.0, key="seed_range_scale", step=0.1)
+        seed_range_alpha = st.slider("Seed Range Alpha", 0.1, 3.0, 1.0, key="seed_range_alpha", step=0.1)
+
+        st.subheader("Seed Mass by Species")
+        seed_mass_by_species = [
+        st.number_input(f"{SPP_LABELS[i]}", 0.001, 1.0,
+                        float(st.session_state.get(f'seed_mass_spp_{i}', st.session_state.get('seedmass', 0.05))),
+                        step=0.001, format="%.3f", key=f"seed_mass_spp_{i}")
+        for i in range(N_SPP)]
+
         st.subheader("Soil Parameters")
         soil_pool_mean = st.slider("Soil Pool Mean", 0.5, 3.0, 1.5, key="soil_pool_mean", step=0.1)
         soil_pool_std = st.slider("Soil Pool Std", 0.01, 0.5, 0.1, key="soil_pool_std", step=0.01)
@@ -518,6 +552,30 @@ with st.sidebar:
             help="Std of random mass perturbation each step."
         )
 
+        st.markdown("**Spatial disturbance fields**")
+
+        env_field_persistence = st.slider(
+            "Env Field Persistence", 0.0, 0.99, 0.85, step=0.01,
+            key="env_field_persistence",
+            help="Temporal memory of the environmental field. Higher = slower spatial change."
+        )
+        env_field_smoothing_passes = st.slider(
+            "Env Field Smoothing", 0, 10, 2, step=1,
+            key="env_field_smoothing_passes",
+            help="Spatial smoothness of the environmental field. Higher = larger correlated patches."
+        )
+
+        shock_field_persistence = st.slider(
+            "Shock Field Persistence", 0.0, 0.99, 0.85, step=0.01,
+            key="shock_field_persistence",
+            help="Temporal memory of the shock field. Higher = slower spatial change."
+        )
+        shock_field_smoothing_passes = st.slider(
+            "Shock Field Smoothing", 0, 10, 2, step=1,
+            key="shock_field_smoothing_passes",
+            help="Spatial smoothness of the shock field. Higher = larger correlated mortality clusters."
+        )
+
         st.divider()
         st.subheader("🧬 Species Niche Centers")
         st.caption("Columns = stoichiometric ideal [C, N, P, K, O].")
@@ -582,7 +640,7 @@ with st.sidebar:
             "turnover_rate": st.session_state.get("turnover_rate", 0.03),
             "mineralization_rate": st.session_state.get("mineralization_rate", 0.05),
             "seed_cost": st.session_state.get("seed_cost", 0.02),
-            "seed_mass": st.session_state.get("seed_mass", 0.02),
+            "seed_mass": st.session_state.get("seed_mass", 0.05),
             "K_biomass": st.session_state.get("K_biomass", 2.5),
             "soil_input_rate": st.session_state.get("soil_input_rate", 0.5),
             "sigma_threshold": st.session_state.get("sigma_threshold", 3.0),
@@ -599,6 +657,10 @@ with st.sidebar:
             "weak_disturbance_mortality": st.session_state.get("weak_disturbance_mortality", 0.4),
             "strong_disturbance_interval": st.session_state.get("strong_disturbance_interval", 0),
             "strong_disturbance_mortality": st.session_state.get("strong_disturbance_mortality", 0.4),
+            "env_field_persistence": st.session_state.get("env_field_persistence", 0.85),
+            "env_field_smoothing_passes": st.session_state.get("env_field_smoothing_passes", 2),
+            "shock_field_persistence": st.session_state.get("shock_field_persistence", 0.85),
+            "shock_field_smoothing_passes": st.session_state.get("shock_field_smoothing_passes", 2),
             "soil_base_ratio": [
                 st.session_state.get("sbr_n", 0.35),
                 st.session_state.get("sbr_p", 0.10),
@@ -617,6 +679,12 @@ with st.sidebar:
                 for s in range(_n)
             ],
             "cov_code": st.session_state.get("cov_code", DEFAULT_COV_CODE),
+            "seed_range_scale": st.session_state.get("seed_range_scale", 10.0),
+            "seed_range_alpha": st.session_state.get("seed_range_alpha", 1.0),
+            "seed_mass_by_species": [
+                st.session_state.get(f"seedmassspp{i}", st.session_state.get("seedmass", 0.05))
+                for i in range(_n)
+            ],
         }
         os.makedirs(os.path.dirname(DEFAULT_CONFIG_PATH), exist_ok=True)
         with open(DEFAULT_CONFIG_PATH, "w") as f:
@@ -669,10 +737,17 @@ if run_btn:
             p_disturbance=p_disturbance,
             disturbance_strength=disturbance_strength,
             demo_noise_std=demo_noise_std,
+            env_field_persistence=env_field_persistence,
+            env_field_smoothing_passes=env_field_smoothing_passes,
+            shock_field_persistence=shock_field_persistence,
+            shock_field_smoothing_passes=shock_field_smoothing_passes,
             scalar_interval=scalar_interval, snapshot_interval=snapshot_interval,
             prog_offset=i, prog_total=NSEEDS,
             prog_bar=prog, status_el=status,
             resume_state=resume_state, start_step=start_step,
+            seed_mass_by_species=seed_mass_by_species,
+            seed_range_scale=seed_range_scale,
+            seed_range_alpha=seed_range_alpha,
         )
         all_runs.append(result)
 
@@ -783,6 +858,9 @@ if run_btn:
             "mineralization_rate": mineralization_rate,
             "seed_cost": seed_cost,
             "seed_mass": seed_mass,
+            "seed_range_scale": seed_range_scale,
+            "seed_range_alpha": seed_range_alpha,
+            "seed_mass_by_species": seed_mass_by_species,
             "K_biomass": K_biomass,
             "soil_input_rate": soil_input_rate,
             "soil_availability_rate": sar,
@@ -797,6 +875,10 @@ if run_btn:
             "weak_disturbance_mortality": weak_disturbance_mortality,
             "strong_disturbance_interval": strong_disturbance_interval,
             "strong_disturbance_mortality": strong_disturbance_mortality,
+            "env_field_persistence": env_field_persistence,
+            "env_field_smoothing_passes": env_field_smoothing_passes,
+            "shock_field_persistence": shock_field_persistence,
+            "shock_field_smoothing_passes": shock_field_smoothing_passes,
             "p_disturbance": p_disturbance,
             "disturbance_strength": disturbance_strength,
             "demo_noise_std": demo_noise_std,
@@ -926,7 +1008,8 @@ if st.session_state["ran"]:
         element_broadness = pd.DataFrame(
             [np.diag(cov) for cov in SPP_COVARIANCES],
             columns=ep.ELEMENTS,
-            index=SPP_LABELS
+            index=RES_SPP_LABELS
+
         )
 
 
@@ -948,8 +1031,8 @@ if st.session_state["ran"]:
         with c1:
             selected_species = st.selectbox(
                 "Species",
-                options=list(range(N_SPP)),
-                format_func=lambda i: SPP_LABELS[i],
+                options=list(range(RES_N_SPP)),
+                format_func=lambda i: RES_SPP_LABELS[i],
                 key="cov_species",
             )
 

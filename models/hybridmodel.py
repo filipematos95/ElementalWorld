@@ -6,6 +6,8 @@ class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_covariances,
                  growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
                  mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
+                 seed_mass_by_species=None, seed_range_scale=10.0,
+                 seed_range_alpha=1.0, seed_range_eps=1e-6,
                  K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0,
                  soil_pool_std=0.01, soil_ratio_noise=0.05, soil_input_rate=0.2,
                  input_drift_scale=0.08, soil_availability_rate=[1.0, 1.0, 1.0, 1.0],
@@ -14,7 +16,9 @@ class HybridEcosystem:
                  weak_disturbance_interval=0, weak_disturbance_mortality=0.4,
                  strong_disturbance_interval=0, strong_disturbance_mortality=0.4,
                  p_disturbance=0.01, disturbance_radius=8, disturbance_strength=0.7,
-                 demo_noise_std=0.003):
+                 demo_noise_std=0.003,
+                 env_field_persistence=0.85, env_field_smoothing_passes=2,
+                 shock_field_persistence=0.85, shock_field_smoothing_passes=2):
 
         self.H = height
         self.W = width
@@ -30,43 +34,41 @@ class HybridEcosystem:
         self.soil_availability_rate = tf.reshape(
             tf.constant(soil_availability_rate, dtype=tf.float32), [1, 1, 4])
         self.sigma_threshold = sigma_threshold
-
         self.soil_input_rate = soil_input_rate
         if soil_base_ratio is None:
             self.soil_base_ratio = np.array([0.4, 0.3, 0.2, 0.1])
         else:
             self.soil_base_ratio = np.array(soil_base_ratio, dtype=np.float32)
 
+        # Seed
+        if seed_mass_by_species is None:
+            self.seed_mass_by_species = tf.ones((self.N_spp,), dtype=tf.float32) * seed_mass
+        else:
+            self.seed_mass_by_species = tf.constant(seed_mass_by_species, dtype=tf.float32)
 
+            self.seed_range_scale = tf.constant(seed_range_scale, dtype=tf.float32)
+            self.seed_range_alpha = tf.constant(seed_range_alpha, dtype=tf.float32)
+            self.seed_range_eps = tf.constant(seed_range_eps, dtype=tf.float32)
 
-
+            self.seed_range_by_species = self.seed_range_scale / tf.pow(
+                self.seed_mass_by_species + self.seed_range_eps,
+                self.seed_range_alpha)
 
         raw_noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
-
         kernel_size = 3
         sigma = 1.0
 
         ax = tf.range(kernel_size, dtype=tf.float32) - (kernel_size - 1)/2.0
         gauss_1d = tf.exp(-0.5 * (ax / sigma)**2)
         gauss_1d = gauss_1d / tf.reduce_sum(gauss_1d)
-
-        gauss_2d = gauss_1d[:, None] * gauss_1d[None, :]          # (k, k)
-        gauss_2d = gauss_2d[:, :, tf.newaxis, tf.newaxis]         # (k, k, 1, 1)
-        gauss_2d = tf.tile(gauss_2d, [1, 1, 4, 1])                # (k, k, 4, 1) depthwise
-
-        raw_noise_4d = raw_noise[tf.newaxis, ...]                 # (1, H, W, 4)
-
-        smoothed_noise = tf.nn.depthwise_conv2d(
-            raw_noise_4d,
-            gauss_2d,
-            strides=[1, 1, 1, 1],
-            padding="SAME"
-        )[0]                                                      # (H, W, 4)
-
+        gauss_2d = gauss_1d[:, None] * gauss_1d[None, :]
+        gauss_2d = gauss_2d[:, :, tf.newaxis, tf.newaxis]
+        gauss_2d = tf.tile(gauss_2d, [1, 1, 4, 1])
+        raw_noise_4d = raw_noise[tf.newaxis, ...]
+        smoothed_noise = tf.nn.depthwise_conv2d(raw_noise_4d, gauss_2d, strides=[1, 1, 1, 1], padding='SAME')[0]
         std_before = tf.math.reduce_std(smoothed_noise)
         smoothed_noise = smoothed_noise * (soil_ratio_noise / (std_before + 1e-9))
-
-        alpha = 0.5  # 0 = pure raw, 1 = pure smooth; try 0.3–0.7
+        alpha = 0.5
         noise = alpha * smoothed_noise + (1.0 - alpha) * raw_noise
         base_tiled = tf.tile(
             tf.constant(self.soil_base_ratio, dtype=tf.float32)[tf.newaxis, tf.newaxis, :],
@@ -89,31 +91,50 @@ class HybridEcosystem:
         self.agents   = tf.Variable(tf.zeros((self.MAX_AGENTS, 11), dtype=tf.float32), name="Agent_Buffer")
         self.n_agents = tf.Variable(0, dtype=tf.int32)
 
-        self.growth_rate         = growth_rate
-        self.respiration_rate    = respiration_rate
-        self.turnover_rate       = turnover_rate
+        self.growth_rate = growth_rate
+        self.respiration_rate = respiration_rate
+        self.turnover_rate = turnover_rate
         self.mineralization_rate = mineralization_rate
-        self.seed_cost           = seed_cost
-        self.seed_mass           = seed_mass
-        self.K_biomass           = K_biomass
-        self.input_drift_scale   = input_drift_scale
-        self.death_fitness_log   = []
-        self.last_deficit        = tf.Variable(tf.zeros((self.N_spp, 4)), dtype=tf.float32)
+        self.seed_cost = seed_cost
+        self.seed_mass = seed_mass
+        self.K_biomass = K_biomass
+        self.input_drift_scale = input_drift_scale
+        self.death_fitness_log = []
+        self.last_deficit = tf.Variable(tf.zeros((self.N_spp, 4)), dtype=tf.float32)
 
-        self.catastrophe_interval  = catastrophe_interval
+        self.catastrophe_interval = catastrophe_interval
         self.catastrophe_mortality = catastrophe_mortality
-        self.p_disturbance         = p_disturbance
-        self.disturbance_radius    = disturbance_radius
-        self.disturbance_strength  = disturbance_strength
-        self.demo_noise_std        = demo_noise_std
+        self.p_disturbance = p_disturbance
+        self.disturbance_radius = disturbance_radius
+        self.disturbance_strength = disturbance_strength
+        self.demo_noise_std = demo_noise_std
         self.weak_disturbance_interval = weak_disturbance_interval
         self.weak_disturbance_mortality = weak_disturbance_mortality
-
         self.strong_disturbance_interval = strong_disturbance_interval
         self.strong_disturbance_mortality = strong_disturbance_mortality
-        self.step_count            = tf.Variable(0, dtype=tf.int32)
+        self.env_field_persistence = env_field_persistence
+        self.env_field_smoothing_passes = env_field_smoothing_passes
+        self.shock_field_persistence = shock_field_persistence
+        self.shock_field_smoothing_passes = shock_field_smoothing_passes
+        self.env_field = tf.Variable(tf.zeros((self.H, self.W), dtype=tf.float32), trainable=False)
+        self.shock_field = tf.Variable(tf.zeros((self.H, self.W), dtype=tf.float32), trainable=False)
+        self.step_count = tf.Variable(0, dtype=tf.int32)
 
+    def _smooth_field(self, x, n_passes):
+        z = x[tf.newaxis, ..., tf.newaxis]
+        for _ in range(int(n_passes)):
+            z = tf.nn.avg_pool2d(z, ksize=3, strides=1, padding='SAME')
+        return z[0, ..., 0]
 
+    def _update_spatial_field(self, field_var, persistence, smoothing_passes):
+        noise = tf.random.normal((self.H, self.W), stddev=1.0)
+        smooth = self._smooth_field(noise, smoothing_passes)
+        updated = persistence * field_var + (1.0 - persistence) * smooth
+        field_var.assign(updated)
+        f = field_var.read_value()
+        fmin = tf.reduce_min(f)
+        fmax = tf.reduce_max(f)
+        return (f - fmin) / (fmax - fmin + 1e-8)
 
     # ──────────────────────────────────────────────────────────────────────────
     def add_initial_seeds(self, count=50, species_id=0):
