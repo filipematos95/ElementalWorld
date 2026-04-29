@@ -215,6 +215,7 @@ class HybridEcosystem:
         niche_norm = my_niche_pref / (tf.reduce_sum(my_niche_pref, axis=1, keepdims=True) + 1e-9)
         desired_npko = remaining[:, tf.newaxis] * niche_norm
         available_npko = tf.gather_nd(inorg_available, coords)
+
         K_m = 0.1
         up_N = desired_npko[:, 0:1] * (available_npko[:, 0:1] / (available_npko[:, 0:1] + K_m))
         up_P = desired_npko[:, 1:2] * (available_npko[:, 1:2] / (available_npko[:, 1:2] + K_m))
@@ -281,6 +282,8 @@ class HybridEcosystem:
             shock_at_agents = tf.gather_nd(shock_field, coords)
             survival_roll_cat = tf.cast(tf.random.uniform(tf.shape(alive)) > (self.catastrophe_mortality * shock_at_agents), tf.float32)
             alive = tf.where(is_catastrophe, alive * survival_roll_cat, alive)
+
+        # 2) weak-filter disturbance — low niche fitness dies more
         if self.weak_disturbance_interval > 0:
             is_weak_disturbance = tf.equal(self.step_count % self.weak_disturbance_interval, 0)
             alpha_weak = 2.0
