@@ -94,6 +94,7 @@ def _apply_config(params: dict):
         "seed_range_scale",
         "seed_range_alpha",
     ]
+
     if "N_SPP" in params:
         st.session_state["N_SPP"] = int(params["N_SPP"])
     n_spp = st.session_state["N_SPP"]
@@ -173,8 +174,8 @@ def _apply_everything(data: dict):
 def _make_model(
         H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
-        mineralization_rate,
-        seedcost, seedmass, seed_mass_by_species, seed_range_scale, seed_range_alpha, K_biomass, sbr,
+        mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,
+        K_biomass, sbr,
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
@@ -192,6 +193,8 @@ def _make_model(
         respiration_rate=respiration_rate,
         turnover_rate=turnover_rate,
         mineralization_rate=mineralization_rate,
+        seed_cost=seed_cost,
+        seed_mass=seed_mass,
         seed_mass_by_species=seed_mass_by_species,
         seed_range_scale=seed_range_scale,
         seed_range_alpha=seed_range_alpha,
@@ -218,6 +221,7 @@ def _make_model(
         shock_field_persistence=shock_field_persistence,
         shock_field_smoothing_passes=shock_field_smoothing_passes,
     )
+
 
 # ─────────────────────────────────────────────
 # ENSEMBLE HELPER
@@ -457,7 +461,7 @@ with st.sidebar:
         st.subheader("Seed Mass by Species")
         seed_mass_by_species = [
         st.number_input(f"{SPP_LABELS[i]}", 0.001, 1.0,
-                        float(st.session_state.get(f'seed_mass_spp_{i}', st.session_state.get('seedmass', 0.02))),
+                        float(st.session_state.get(f'seed_mass_spp_{i}', st.session_state.get('seedmass', 0.05))),
                         step=0.001, format="%.3f", key=f"seed_mass_spp_{i}")
         for i in range(N_SPP)]
 
@@ -636,7 +640,7 @@ with st.sidebar:
             "turnover_rate": st.session_state.get("turnover_rate", 0.03),
             "mineralization_rate": st.session_state.get("mineralization_rate", 0.05),
             "seed_cost": st.session_state.get("seed_cost", 0.02),
-            "seed_mass": st.session_state.get("seed_mass", 0.02),
+            "seed_mass": st.session_state.get("seed_mass", 0.05),
             "K_biomass": st.session_state.get("K_biomass", 2.5),
             "soil_input_rate": st.session_state.get("soil_input_rate", 0.5),
             "sigma_threshold": st.session_state.get("sigma_threshold", 3.0),
@@ -678,7 +682,7 @@ with st.sidebar:
             "seed_range_scale": st.session_state.get("seed_range_scale", 10.0),
             "seed_range_alpha": st.session_state.get("seed_range_alpha", 1.0),
             "seed_mass_by_species": [
-                st.session_state.get(f"seedmassspp{i}", st.session_state.get("seedmass", 0.02))
+                st.session_state.get(f"seedmassspp{i}", st.session_state.get("seedmass", 0.05))
                 for i in range(_n)
             ],
         }
