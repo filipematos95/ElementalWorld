@@ -247,32 +247,30 @@ class HybridEcosystem:
         available_npko = tf.gather_nd(inorg_available, coords)
 
         K_m = 0.1
-        up_N = desired_npko[:, 0:1] * (available_npko[:, 0:1] / (available_npko[:, 0:1] + K_m))
-        up_P = desired_npko[:, 1:2] * (available_npko[:, 1:2] / (available_npko[:, 1:2] + K_m))
-        up_K = desired_npko[:, 2:3] * (available_npko[:, 2:3] / (available_npko[:, 2:3] + K_m))
-        up_O = desired_npko[:, 3:4] * (available_npko[:, 3:4] / (available_npko[:, 3:4] + K_m))
+        uptake = desired_npko * (available_npko / (available_npko + K_m))  # (N, 4)
+        up_N = uptake[:, 0]
+        up_P = uptake[:, 1]
+        up_K = uptake[:, 2]
+        up_O = uptake[:, 3]
 
         deficits = tf.stack([
-            tf.maximum(0.0, desired_npko[:, 0] - up_N[:, 0]),
-            tf.maximum(0.0, desired_npko[:, 1] - up_P[:, 0]),
-            tf.maximum(0.0, desired_npko[:, 2] - up_K[:, 0]),
-            tf.maximum(0.0, desired_npko[:, 3] - up_O[:, 0]),
+            tf.maximum(0.0, desired_npko[:, 0] - up_N),
+            tf.maximum(0.0, desired_npko[:, 1] - up_P),
+            tf.maximum(0.0, desired_npko[:, 2] - up_K),
+            tf.maximum(0.0, desired_npko[:, 3] - up_O),
         ], axis=1)
 
-        per_spp_deficit = tf.zeros((self.N_spp, 4))
-        for s in range(self.N_spp):
-            mask = tf.cast(spp_ids == s, tf.float32)[:, tf.newaxis]
-            spp_def = tf.reduce_sum(deficits * mask, axis=0)
-            per_spp_deficit = tf.tensor_scatter_nd_update(per_spp_deficit, [[s]], [spp_def])
+        per_spp_deficit = tf.math.unsorted_segment_sum(
+            deficits, spp_ids, num_segments=self.N_spp)
         self.last_deficit.assign(per_spp_deficit)
         c_uptake = c_uptake_potential
-        actual_growth = c_uptake + up_N[:, 0] + up_P[:, 0] + up_K[:, 0] + up_O[:, 0]
+        actual_growth = c_uptake + up_N + up_P + up_K + up_O
 
         pool_C = (mass * curr_C) + c_uptake
-        pool_N = (mass * curr_N) + up_N[:, 0]
-        pool_P = (mass * curr_P) + up_P[:, 0]
-        pool_K = (mass * curr_K) + up_K[:, 0]
-        pool_O = (mass * curr_O) + up_O[:, 0]
+        pool_N = (mass * curr_N) + up_N
+        pool_P = (mass * curr_P) + up_P
+        pool_K = (mass * curr_K) + up_K
+        pool_O = (mass * curr_O) + up_O
 
         # --- C. GROWTH ---
         MIN_QUOTA = 0.01
@@ -288,9 +286,12 @@ class HybridEcosystem:
         g_K = tf.maximum(0.0, 1.0 - (MIN_QUOTA / (Q_K + 1e-9)))
         g_O = tf.maximum(0.0, 1.0 - (MIN_QUOTA / (Q_O + 1e-9)))
         limit_g = tf.minimum(tf.minimum(g_C, g_N), tf.minimum(tf.minimum(g_P, g_K), g_O))
+        flat_coords = coords[:, 0] * self.W + coords[:, 1]   # (N_agents,)
 
-        grid_bio = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, mass)
-        loc_bio  = tf.gather_nd(grid_bio, coords)
+        mass_flat = tf.math.unsorted_segment_sum(
+            mass, flat_coords, num_segments=self.H * self.W)
+        grid_bio = tf.reshape(mass_flat, (self.H, self.W))
+        loc_bio  = tf.gather(mass_flat, flat_coords)   # no gather_nd needed
         space_f  = tf.maximum(0.0, 1.0 - (loc_bio / self.K_biomass))
 
         realized_growth = actual_growth * limit_g * space_f
@@ -371,22 +372,35 @@ class HybridEcosystem:
         fr_K = fr_K / ratio_sum
         fr_O = fr_O / ratio_sum
 
-        g_rec_N = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_N)
-        g_rec_P = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_P)
-        g_rec_K = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_K)
-        g_rec_O = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, loss_O)
+        # Compute flat indices once — reuse for all scatter ops
+        n_cells = self.H * self.W
 
-        g_up_N  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_N[:, 0])
-        g_up_P  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_P[:, 0])
-        g_up_K  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_K[:, 0])
-        g_up_O  = tf.tensor_scatter_nd_add(tf.zeros((self.H, self.W)), coords, up_O[:, 0])
+        # Stack all recycling losses: (N_agents, 4)
+        rec_vals = tf.stack([loss_N, loss_P, loss_K, loss_O], axis=1)
 
-        fresh   = tf.stack([g_rec_N, g_rec_P, g_rec_K, g_rec_O], axis=-1)
+        # Stack all uptakes: (N_agents, 4)
+        up_vals = uptake
+
+        # Also grid_bio while we're at it: (N_agents, 1)
+        bio_vals = mass[:, tf.newaxis]
+
+        # Three segment sums instead of 9 separate scatter ops
+        fresh_flat = tf.math.unsorted_segment_sum(rec_vals, flat_coords, n_cells)  # (H*W, 4)
+        up_flat    = tf.math.unsorted_segment_sum(up_vals,  flat_coords, n_cells)  # (H*W, 4)
+        bio_flat   = tf.math.unsorted_segment_sum(bio_vals, flat_coords, n_cells)  # (H*W, 1)
+
+        # Reshape back to (H, W, 4) / (H, W)
+        fresh    = tf.reshape(fresh_flat, (self.H, self.W, 4))
+        up_st    = tf.reshape(up_flat,   (self.H, self.W, 4))
+        grid_bio = tf.reshape(bio_flat[:, 0], (self.H, self.W))
+
+        # loc_bio: each agent reads its cell's total biomass — no gather_nd needed
+        loc_bio  = tf.gather(bio_flat[:, 0], flat_coords)   # (N_agents,)
+
         org_tot = org + fresh
         temp_mineral_factor = 1.0 + self.temperature_mineralization_strength * (temp_field[:, :, tf.newaxis] - 0.5)
         flux    = org_tot * self.mineralization_rate * temp_mineral_factor
         org_fin = org_tot - flux
-        up_st   = tf.stack([g_up_N, g_up_P, g_up_K, g_up_O], axis=-1)
 
         inorg_fin = tf.maximum(0.0, inorg_new + flux - up_st)
         self.soil.assign(tf.concat([inorg_fin, org_fin], axis=-1))
@@ -407,12 +421,17 @@ class HybridEcosystem:
             alive[:, tf.newaxis],
             new_age[:, tf.newaxis],  # ← AGE
         ], axis=1)
-        self.agents.scatter_nd_update(active_idx, up_rows)
 
-        current_agents = self.agents.read_value()
-        keep_mask      = tf.logical_and(
-            tf.range(self.MAX_AGENTS) < self.n_agents,
-            current_agents[:, 9] > 0.5)
+        self.agents.scatter_nd_update(active_idx, up_rows)
+        alive_mask_local = up_rows[:, 9] > 0.5
+        living_agents    = tf.boolean_mask(up_rows, alive_mask_local)
+        new_count        = tf.shape(living_agents)[0]
+        new_tensor_state = tf.concat(
+            [living_agents,
+             tf.zeros((self.MAX_AGENTS - new_count, 11), dtype=tf.float32)],
+            axis=0)
+        self.agents.assign(new_tensor_state)
+        self.n_agents.assign(new_count)
 
         dying_mask = alive < 0.5
         tf.py_function(
@@ -422,21 +441,12 @@ class HybridEcosystem:
                  tf.boolean_mask(spp_ids, dying_mask)],
             Tout=[])
 
-        living_agents    = tf.boolean_mask(current_agents, keep_mask)
-        new_count        = tf.shape(living_agents)[0]
-        new_tensor_state = tf.concat(
-            [living_agents,
-             tf.zeros((self.MAX_AGENTS - new_count, 11), dtype=tf.float32)],  # ← AGE: 10→11
-            axis=0)
-        self.agents.assign(new_tensor_state)
-        self.n_agents.assign(new_count)
-
-
         # Spawn offspring
         p_idx = tf.where(parents)[:, 0]
         n_s = tf.shape(p_idx)[0]
         if n_s > 0:
             p_dat = tf.gather(up_rows, p_idx)
+
             spp_parent = tf.cast(p_dat[:, 2], tf.int32)
             rng = tf.gather(self.seed_range_by_species, spp_parent)
 
