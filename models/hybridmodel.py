@@ -18,7 +18,15 @@ class HybridEcosystem:
                  p_disturbance=0.01, disturbance_radius=8, disturbance_strength=0.7,
                  demo_noise_std=0.003,
                  env_field_persistence=0.85, env_field_smoothing_passes=2,
-                 shock_field_persistence=0.85, shock_field_smoothing_passes=2):
+                 shock_field_persistence=0.85, shock_field_smoothing_passes=2,
+                 temperature_mean=0.5,
+                 temperature_amplitude=0.3,
+                 temperature_period=100.0,
+                 temperature_phase=0.0,
+                 temperature_spatial_strength=0.0,
+                 temperature_growth_strength=0.5,
+                 temperature_respiration_strength=0.3,
+                 temperature_mineralization_strength=0.4):
 
         self.H = height
         self.W = width
@@ -46,13 +54,20 @@ class HybridEcosystem:
         else:
             self.seed_mass_by_species = tf.constant(seed_mass_by_species, dtype=tf.float32)
 
-            self.seed_range_scale = tf.constant(seed_range_scale, dtype=tf.float32)
-            self.seed_range_alpha = tf.constant(seed_range_alpha, dtype=tf.float32)
-            self.seed_range_eps = tf.constant(seed_range_eps, dtype=tf.float32)
+        self.seed_range_scale = tf.constant(seed_range_scale, dtype=tf.float32)
+        self.seed_range_alpha = tf.constant(seed_range_alpha, dtype=tf.float32)
+        self.seed_range_eps = tf.constant(seed_range_eps, dtype=tf.float32)
 
-            self.seed_range_by_species = self.seed_range_scale / tf.pow(
-                self.seed_mass_by_species + self.seed_range_eps,
-                self.seed_range_alpha)
+        self.seed_range_by_species = self.seed_range_scale * tf.pow(
+            self.seed_mass_by_species + self.seed_range_eps,
+            self.seed_range_alpha)
+
+
+        print("seed_range_scale:     ", self.seed_range_scale.numpy())
+        print("seed_range_alpha:     ", self.seed_range_alpha.numpy())
+        print("seed_range_eps:       ", self.seed_range_eps.numpy())
+        print("seed_mass_by_species: ", self.seed_mass_by_species.numpy())
+        print("seed_range_by_species:", self.seed_range_by_species.numpy())
 
         raw_noise = tf.random.normal((self.H, self.W, 4), mean=0.0, stddev=soil_ratio_noise)
         kernel_size = 3
@@ -119,7 +134,15 @@ class HybridEcosystem:
         self.env_field = tf.Variable(tf.zeros((self.H, self.W), dtype=tf.float32), trainable=False)
         self.shock_field = tf.Variable(tf.zeros((self.H, self.W), dtype=tf.float32), trainable=False)
         self.step_count = tf.Variable(0, dtype=tf.int32)
-
+        self.temperature_mean = tf.constant(temperature_mean, dtype=tf.float32)
+        self.temperature_amplitude = tf.constant(temperature_amplitude, dtype=tf.float32)
+        self.temperature_period = tf.constant(temperature_period, dtype=tf.float32)
+        self.temperature_phase = tf.constant(temperature_phase, dtype=tf.float32)
+        self.temperature_spatial_strength = tf.constant(temperature_spatial_strength, dtype=tf.float32)
+        self.temperature_growth_strength = tf.constant(temperature_growth_strength, dtype=tf.float32)
+        self.temperature_respiration_strength = tf.constant(temperature_respiration_strength, dtype=tf.float32)
+        self.temperature_mineralization_strength = tf.constant(temperature_mineralization_strength, dtype=tf.float32)
+        self.temperature = tf.Variable(temperature_mean, dtype=tf.float32, trainable=False)
     def _smooth_field(self, x, n_passes):
         z = x[tf.newaxis, ..., tf.newaxis]
         for _ in range(int(n_passes)):
@@ -190,10 +213,8 @@ class HybridEcosystem:
         inorg_available = inorg_new * self.soil_availability_rate
         active_mask = self.agents[:, 9] > 0.5
         active_idx = tf.where(active_mask)
-        if tf.shape(active_idx)[0] == 0:
-            flux = org * self.mineralization_rate
-            self.soil.assign(tf.concat([inorg_curr + flux, org - flux], axis=-1))
-            return self.n_agents
+
+
 
         active_data = tf.gather_nd(self.agents, active_idx)
         spp_ids = tf.cast(active_data[:, 2], tf.int32)
@@ -208,7 +229,16 @@ class HybridEcosystem:
         curr_elementome = active_data[:, 4:9]
         my_centers = tf.gather(self.niche_centers, spp_ids)
         niche_fitness = self._compute_niche_fitness_mahalanobis(curr_elementome, my_centers, spp_ids)
-        desired_growth = niche_fitness * self.growth_rate * mass
+
+        # Seasonality (Temperature)
+        temp_scalar = self._update_temperature()
+        temp_field = temp_scalar + self.temperature_spatial_strength * (env_field - 0.5)
+        temp_field = tf.clip_by_value(temp_field, 0.0, 1.0)
+        temp_at_agents = tf.gather_nd(temp_field, coords)
+
+        temp_growth_factor = 1.0 + self.temperature_growth_strength * (temp_at_agents - 0.5)
+        desired_growth = niche_fitness * self.growth_rate * mass * temp_growth_factor
+
         c_uptake_potential = desired_growth * curr_C
         remaining = desired_growth - c_uptake_potential
         my_niche_pref = tf.gather(self.niche_centers[:, 1:], spp_ids)
@@ -264,7 +294,9 @@ class HybridEcosystem:
         space_f  = tf.maximum(0.0, 1.0 - (loc_bio / self.K_biomass))
 
         realized_growth = actual_growth * limit_g * space_f
-        maint    = mass * self.respiration_rate
+        temp_resp_factor = 1.0 + self.temperature_respiration_strength * (temp_at_agents - 0.5)
+
+        maint    = mass * self.respiration_rate * temp_resp_factor
         fin_mass = mass + realized_growth - maint
 
         # Catastrophes
@@ -275,6 +307,8 @@ class HybridEcosystem:
 
 
         self.step_count.assign_add(1)
+
+
 
         # 1)  global uniform catastrophe — keep it
         if self.catastrophe_interval > 0:
@@ -349,18 +383,19 @@ class HybridEcosystem:
 
         fresh   = tf.stack([g_rec_N, g_rec_P, g_rec_K, g_rec_O], axis=-1)
         org_tot = org + fresh
-        flux    = org_tot * self.mineralization_rate
+        temp_mineral_factor = 1.0 + self.temperature_mineralization_strength * (temp_field[:, :, tf.newaxis] - 0.5)
+        flux    = org_tot * self.mineralization_rate * temp_mineral_factor
         org_fin = org_tot - flux
         up_st   = tf.stack([g_up_N, g_up_P, g_up_K, g_up_O], axis=-1)
 
-        inorg_fin = tf.maximum(0.0, inorg_curr + flux - up_st)
+        inorg_fin = tf.maximum(0.0, inorg_new + flux - up_st)
         self.soil.assign(tf.concat([inorg_fin, org_fin], axis=-1))
 
         # --- E. REPRODUCTION ---
         is_fertile = fin_mass_alive > self.seed_cost
         seed_prob = 0.1 * niche_fitness
         do_seed = tf.random.uniform(tf.shape(fin_mass_alive)) < seed_prob
-        parents = is_fertile & (tf.random.uniform(tf.shape(fin_mass_alive), dtype=tf.float32) < tf.cast(do_seed, tf.float32))
+        parents = is_fertile & do_seed
         fin_mass_alive = tf.where(parents, fin_mass_alive - self.seed_cost, fin_mass_alive)
 
         up_rows = tf.concat([
@@ -380,13 +415,12 @@ class HybridEcosystem:
             current_agents[:, 9] > 0.5)
 
         dying_mask = alive < 0.5
-        if tf.reduce_any(dying_mask):
-            tf.py_function(
-                func=lambda f, s: self.death_fitness_log.extend(
-                    zip(s.numpy().tolist(), f.numpy().tolist())),
-                inp=[tf.boolean_mask(niche_fitness, dying_mask),
-                     tf.boolean_mask(spp_ids, dying_mask)],
-                Tout=[])
+        tf.py_function(
+            func=lambda f, s: self.death_fitness_log.extend(
+                zip(s.numpy().tolist(), f.numpy().tolist())),
+            inp=[tf.boolean_mask(niche_fitness, dying_mask),
+                 tf.boolean_mask(spp_ids, dying_mask)],
+            Tout=[])
 
         living_agents    = tf.boolean_mask(current_agents, keep_mask)
         new_count        = tf.shape(living_agents)[0]
@@ -397,6 +431,7 @@ class HybridEcosystem:
         self.agents.assign(new_tensor_state)
         self.n_agents.assign(new_count)
 
+
         # Spawn offspring
         p_idx = tf.where(parents)[:, 0]
         n_s = tf.shape(p_idx)[0]
@@ -404,12 +439,17 @@ class HybridEcosystem:
             p_dat = tf.gather(up_rows, p_idx)
             spp_parent = tf.cast(p_dat[:, 2], tf.int32)
             rng = tf.gather(self.seed_range_by_species, spp_parent)
-            spread = tf.cast(tf.maximum(1.0, tf.round(rng)), tf.int32)
 
-            dy = tf.random.uniform((n_s,), minval=-1, maxval=2, dtype=tf.int32) * spread
-            dx = tf.random.uniform((n_s,), minval=-1, maxval=2, dtype=tf.int32) * spread
+            spread = tf.cast(tf.maximum(1.0, tf.round(rng)), tf.int32) # 1.0 not 1
+
+            spread_f = tf.cast(spread, tf.float32)
+            total_f = 2.0 * spread_f + 1.0
+            dy = tf.cast(tf.math.floor(tf.random.uniform((n_s,)) * total_f) - spread_f, tf.int32)
+            dx = tf.cast(tf.math.floor(tf.random.uniform((n_s,)) * total_f) - spread_f, tf.int32)
+
             ny = (tf.cast(p_dat[:, 0], tf.int32) + dy) % self.H
             nx = (tf.cast(p_dat[:, 1], tf.int32) + dx) % self.W
+
 
             c_rows = tf.concat([
                 tf.cast(ny, tf.float32)[:, tf.newaxis],
@@ -420,10 +460,26 @@ class HybridEcosystem:
                 tf.ones((n_s, 1)),
                 tf.zeros((n_s, 1)),
                 ], axis=1)
+
+
+            # Density-dependent establishment filter
+            target_density = tf.gather_nd(grid_bio, tf.stack([ny, nx], axis=1))
+            establishment_prob = tf.maximum(0.0, 1.0 - target_density / self.K_biomass)
+            establish = tf.random.uniform((n_s,)) < establishment_prob
+            establish_idx = tf.where(establish)[:, 0]
+
+            c_rows = tf.gather(c_rows, establish_idx)
+
+            # ← derive shape DIRECTLY from c_rows, never from establish_idx separately
+            n_to_place = tf.shape(c_rows)[0]
+
             st   = self.n_agents.value()
-            safe = tf.minimum(n_s, self.MAX_AGENTS - st)
+            safe = tf.minimum(n_to_place, self.MAX_AGENTS - st)
             if safe > 0:
-                self.agents.scatter_nd_update(tf.range(st, st + safe)[:, tf.newaxis], c_rows[:safe])
+                self.agents.scatter_nd_update(
+                    tf.range(st, st + safe)[:, tf.newaxis],
+                    c_rows[:safe]
+                )
                 self.n_agents.assign_add(safe)
 
         return self.n_agents
@@ -465,7 +521,7 @@ class HybridEcosystem:
     def _compute_niche_fitness_mahalanobis(self, elementome_vals, my_centers, spp_ids):
         n_agents = tf.shape(elementome_vals)[0]
         delta = elementome_vals - my_centers
-        inv_cov = tf.gather(self.tolerance_inv, spp_ids) if spp_ids is not None and tf.shape(spp_ids)[0] == n_agents else self.tolerance_inv[0:1]
+        inv_cov = tf.gather(self.tolerance_inv, spp_ids)
         mahal_sq = tf.reduce_sum(delta * tf.einsum('ni,nij->nj', delta, inv_cov), axis=1)
         mahal_dist = tf.sqrt(mahal_sq)
         niche_fitness = 1.0 - tf.square(mahal_dist / self.sigma_threshold)
@@ -580,3 +636,11 @@ class HybridEcosystem:
 
         EDm = tf.reduce_sum(Dm * Pmin) / E
         return float(EDm.numpy())
+
+    def _update_temperature(self):
+        t = tf.cast(self.step_count, tf.float32)
+        temp = self.temperature_mean + self.temperature_amplitude * tf.sin(
+            2.0 * np.pi * (t + self.temperature_phase) / self.temperature_period
+        )
+        self.temperature.assign(temp)
+        return temp

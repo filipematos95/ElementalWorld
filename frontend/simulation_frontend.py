@@ -93,6 +93,14 @@ def _apply_config(params: dict):
         "shock_field_persistence", "shock_field_smoothing_passes",
         "seed_range_scale",
         "seed_range_alpha",
+        "temperature_mean",
+        "temperature_amplitude",
+        "temperature_period",
+        "temperature_phase",
+        "temperature_spatial_strength",
+        "temperature_growth_strength",
+        "temperature_respiration_strength",
+        "temperature_mineralization_strength",
     ]
 
     if "N_SPP" in params:
@@ -119,7 +127,7 @@ def _apply_config(params: dict):
 
     if "seed_mass_by_species" in params:
         for i, val in enumerate(params["seed_mass_by_species"][:n_spp]):
-            st.session_state[f"seedmassspp{i}"] = float(val)
+            st.session_state[f"seed_mass_spp{i}"] = float(val)
 
     if "spp_centers" in params:
         for s, row in enumerate(params["spp_centers"][:n_spp]):
@@ -183,7 +191,10 @@ def _make_model(
         strong_disturbance_interval, strong_disturbance_mortality,
         p_disturbance, disturbance_strength, demo_noise_std,
         env_field_persistence, env_field_smoothing_passes,
-        shock_field_persistence, shock_field_smoothing_passes
+        shock_field_persistence, shock_field_smoothing_passes,
+        temperature_mean, temperature_amplitude, temperature_period, temperature_phase,
+        temperature_spatial_strength,
+        temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength
 ):
     return HybridEcosystem(
         height=H, width=W, max_agents=MAX_AGENTS,
@@ -220,6 +231,14 @@ def _make_model(
         env_field_smoothing_passes=env_field_smoothing_passes,
         shock_field_persistence=shock_field_persistence,
         shock_field_smoothing_passes=shock_field_smoothing_passes,
+        temperature_mean=temperature_mean,
+        temperature_amplitude=temperature_amplitude,
+        temperature_period=temperature_period,
+        temperature_phase=temperature_phase,
+        temperature_spatial_strength=temperature_spatial_strength,
+        temperature_growth_strength=temperature_growth_strength,
+        temperature_respiration_strength=temperature_respiration_strength,
+        temperature_mineralization_strength=temperature_mineralization_strength,
     )
 
 
@@ -242,6 +261,9 @@ def _run_one_seed(
         scalar_interval, snapshot_interval,
         prog_offset, prog_total, prog_bar, status_el,
         seed_mass_by_species, seed_range_scale, seed_range_alpha,
+        temperature_mean, temperature_amplitude, temperature_period, temperature_phase,
+        temperature_spatial_strength,
+        temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength,
         resume_state=None, start_step=0
 ):
     tf.random.set_seed(seed)
@@ -258,7 +280,10 @@ def _run_one_seed(
         strong_disturbance_interval, strong_disturbance_mortality,
         p_disturbance, disturbance_strength, demo_noise_std,
         env_field_persistence, env_field_smoothing_passes,
-        shock_field_persistence, shock_field_smoothing_passes
+        shock_field_persistence, shock_field_smoothing_passes,
+        temperature_mean, temperature_amplitude, temperature_period, temperature_phase,
+        temperature_spatial_strength,
+        temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength,
     )
     n_spp = len(spp_centers)
 
@@ -461,7 +486,7 @@ with st.sidebar:
         st.subheader("Seed Mass by Species")
         seed_mass_by_species = [
         st.number_input(f"{SPP_LABELS[i]}", 0.001, 1.0,
-                        float(st.session_state.get(f'seed_mass_spp_{i}', st.session_state.get('seedmass', 0.05))),
+                        float(st.session_state.get(f'seed_mass_spp_{i}', st.session_state.get('seed_mass', 0.05))),
                         step=0.001, format="%.3f", key=f"seed_mass_spp_{i}")
         for i in range(N_SPP)]
 
@@ -576,6 +601,48 @@ with st.sidebar:
             help="Spatial smoothness of the shock field. Higher = larger correlated mortality clusters."
         )
 
+        st.subheader("Temperature")
+        temperature_mean = st.slider(
+            "Temperature Mean", 0.0, 1.0, 0.5,
+            key="temperature_mean", step=0.01,
+            help="Baseline temperature level."
+        )
+        temperature_amplitude = st.slider(
+            "Temperature Amplitude", 0.0, 1.0, 0.3,
+            key="temperature_amplitude", step=0.01,
+            help="Seasonal oscillation strength."
+        )
+        temperature_period = st.slider(
+            "Temperature Period", 1, 1000, 100,
+            key="temperature_period", step=1,
+            help="Number of steps per temperature cycle."
+        )
+        temperature_phase = st.slider(
+            "Temperature Phase", 0.0, 6.2832, 0.0,
+            key="temperature_phase", step=0.01,
+            help="Phase offset in radians."
+        )
+        temperature_spatial_strength = st.slider(
+            "Temperature Spatial Strength", 0.0, 1.0, 0.0,
+            key="temperature_spatial_strength", step=0.01,
+            help="Strength of spatial temperature heterogeneity."
+        )
+        temperature_growth_strength = st.slider(
+            "Temperature Effect on Growth", 0.0, 2.0, 0.5,
+            key="temperature_growth_strength", step=0.01,
+            help="How strongly temperature modifies growth."
+        )
+        temperature_respiration_strength = st.slider(
+            "Temperature Effect on Respiration", 0.0, 2.0, 0.3,
+            key="temperature_respiration_strength", step=0.01,
+            help="How strongly temperature modifies respiration."
+        )
+        temperature_mineralization_strength = st.slider(
+            "Temperature Effect on Mineralization", 0.0, 2.0, 0.4,
+            key="temperature_mineralization_strength", step=0.01,
+            help="How strongly temperature modifies mineralization."
+        )
+
         st.divider()
         st.subheader("🧬 Species Niche Centers")
         st.caption("Columns = stoichiometric ideal [C, N, P, K, O].")
@@ -661,6 +728,14 @@ with st.sidebar:
             "env_field_smoothing_passes": st.session_state.get("env_field_smoothing_passes", 2),
             "shock_field_persistence": st.session_state.get("shock_field_persistence", 0.85),
             "shock_field_smoothing_passes": st.session_state.get("shock_field_smoothing_passes", 2),
+            "temperature_mean": st.session_state.get("temperature_mean", 0.5),
+            "temperature_amplitude": st.session_state.get("temperature_amplitude", 0.3),
+            "temperature_period": st.session_state.get("temperature_period", 100),
+            "temperature_phase": st.session_state.get("temperature_phase", 0.0),
+            "temperature_spatial_strength": st.session_state.get("temperature_spatial_strength", 0.0),
+            "temperature_growth_strength": st.session_state.get("temperature_growth_strength", 0.5),
+            "temperature_respiration_strength": st.session_state.get("temperature_respiration_strength", 0.3),
+            "temperature_mineralization_strength": st.session_state.get("temperature_mineralization_strength", 0.4),
             "soil_base_ratio": [
                 st.session_state.get("sbr_n", 0.35),
                 st.session_state.get("sbr_p", 0.10),
@@ -682,7 +757,7 @@ with st.sidebar:
             "seed_range_scale": st.session_state.get("seed_range_scale", 10.0),
             "seed_range_alpha": st.session_state.get("seed_range_alpha", 1.0),
             "seed_mass_by_species": [
-                st.session_state.get(f"seedmassspp{i}", st.session_state.get("seedmass", 0.05))
+                st.session_state.get(f"seed_mass_spp{i}", st.session_state.get("seed_mass", 0.05))
                 for i in range(_n)
             ],
         }
@@ -748,6 +823,14 @@ if run_btn:
             seed_mass_by_species=seed_mass_by_species,
             seed_range_scale=seed_range_scale,
             seed_range_alpha=seed_range_alpha,
+            temperature_mean=temperature_mean,
+            temperature_amplitude=temperature_amplitude,
+            temperature_period=temperature_period,
+            temperature_phase=temperature_phase,
+            temperature_spatial_strength=temperature_spatial_strength,
+            temperature_growth_strength=temperature_growth_strength,
+            temperature_respiration_strength=temperature_respiration_strength,
+            temperature_mineralization_strength=temperature_mineralization_strength,
         )
         all_runs.append(result)
 
@@ -887,6 +970,14 @@ if run_btn:
             "snapshot_interval": snapshot_interval,
             "cov_code": cov_code,
             "N_SPP": N_SPP,
+            "temperature_mean": temperature_mean,
+            "temperature_amplitude": temperature_amplitude,
+            "temperature_period": temperature_period,
+            "temperature_phase": temperature_phase,
+            "temperature_spatial_strength": temperature_spatial_strength,
+            "temperature_growth_strength": temperature_growth_strength,
+            "temperature_respiration_strength": temperature_respiration_strength,
+            "temperature_mineralization_strength": temperature_mineralization_strength,
         },
         "history_biomass": history_biomass,
         "history_elements": history_elements,
