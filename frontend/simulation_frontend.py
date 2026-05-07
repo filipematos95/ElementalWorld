@@ -11,6 +11,8 @@ import backend.plotting as ep
 from datetime import datetime
 import pickle, io
 import json
+import tempfile, os
+
 
 st.set_page_config(page_title="Ecosystem Simulator", page_icon="🌿", layout="wide")
 st.title("🌿 Hybrid Ecosystem Simulator")
@@ -25,7 +27,77 @@ def _load_default_config() -> dict | None:
         with open(DEFAULT_CONFIG_PATH, "r") as f:
             return json.load(f)
     return None
-
+def _build_config_dict() -> dict:
+    _n = st.session_state.get("N_SPP", 5)
+    return {
+        "N_SPP": _n,
+        "H": st.session_state.get("H", 100),
+        "W": st.session_state.get("W", 100),
+        "MAX_AGENTS": st.session_state.get("MAX_AGENTS", 150000),
+        "N_STEPS": st.session_state.get("N_STEPS", 1500),
+        "SEED": st.session_state.get("SEED", 35),
+        "NSEEDS": st.session_state.get("NSEEDS", 1),
+        "scalar_interval": st.session_state.get("scalar_interval", 20),
+        "snapshot_interval": st.session_state.get("snapshot_interval", 50),
+        "growth_rate": st.session_state.get("growth_rate", 0.45),
+        "respiration_rate": st.session_state.get("respiration_rate", 0.015),
+        "turnover_rate": st.session_state.get("turnover_rate", 0.03),
+        "mineralization_rate": st.session_state.get("mineralization_rate", 0.05),
+        "seed_cost": st.session_state.get("seed_cost", 0.02),
+        "seed_mass": st.session_state.get("seed_mass", 0.05),
+        "K_biomass": st.session_state.get("K_biomass", 2.5),
+        "soil_input_rate": st.session_state.get("soil_input_rate", 0.5),
+        "sigma_threshold": st.session_state.get("sigma_threshold", 3.0),
+        "soil_pool_mean": st.session_state.get("soil_pool_mean", 1.5),
+        "soil_pool_std": st.session_state.get("soil_pool_std", 0.1),
+        "soil_ratio_noise": st.session_state.get("soil_ratio_noise", 0.05),
+        "input_drift_scale": st.session_state.get("input_drift_scale", 0.08),
+        "catastrophe_interval": st.session_state.get("catastrophe_interval", 200),
+        "catastrophe_mortality": st.session_state.get("catastrophe_mortality", 0.4),
+        "p_disturbance": st.session_state.get("p_disturbance", 0.01),
+        "disturbance_strength": st.session_state.get("disturbance_strength", 0.7),
+        "demo_noise_std": st.session_state.get("demo_noise_std", 0.003),
+        "weak_disturbance_interval": st.session_state.get("weak_disturbance_interval", 0),
+        "weak_disturbance_mortality": st.session_state.get("weak_disturbance_mortality", 0.4),
+        "strong_disturbance_interval": st.session_state.get("strong_disturbance_interval", 0),
+        "strong_disturbance_mortality": st.session_state.get("strong_disturbance_mortality", 0.4),
+        "env_field_persistence": st.session_state.get("env_field_persistence", 0.85),
+        "env_field_smoothing_passes": st.session_state.get("env_field_smoothing_passes", 2),
+        "shock_field_persistence": st.session_state.get("shock_field_persistence", 0.85),
+        "shock_field_smoothing_passes": st.session_state.get("shock_field_smoothing_passes", 2),
+        "temperature_mean": st.session_state.get("temperature_mean", 0.5),
+        "temperature_amplitude": st.session_state.get("temperature_amplitude", 0.3),
+        "temperature_period": st.session_state.get("temperature_period", 100),
+        "temperature_phase": st.session_state.get("temperature_phase", 0.0),
+        "temperature_spatial_strength": st.session_state.get("temperature_spatial_strength", 0.0),
+        "temperature_growth_strength": st.session_state.get("temperature_growth_strength", 0.5),
+        "temperature_respiration_strength": st.session_state.get("temperature_respiration_strength", 0.3),
+        "temperature_mineralization_strength": st.session_state.get("temperature_mineralization_strength", 0.4),
+        "soil_base_ratio": [
+            st.session_state.get("sbr_n", 0.35),
+            st.session_state.get("sbr_p", 0.10),
+            st.session_state.get("sbr_k", 0.35),
+            st.session_state.get("sbr_o", 0.10),
+        ],
+        "soil_availability_rate": [
+            st.session_state.get("sar_n", 0.4),
+            st.session_state.get("sar_p", 0.1),
+            st.session_state.get("sar_k", 0.1),
+            st.session_state.get("sar_o", 0.3),
+        ],
+        "initial_seeds": [st.session_state.get(f"seeds_{i}", 10) for i in range(_n)],
+        "spp_centers": [
+            [st.session_state.get(f"nc_{s}_{e}", 0.0) for e in range(5)]
+            for s in range(_n)
+        ],
+        "cov_code": st.session_state.get("cov_code", DEFAULT_COV_CODE),
+        "seed_range_scale": st.session_state.get("seed_range_scale", 10.0),
+        "seed_range_alpha": st.session_state.get("seed_range_alpha", 1.0),
+        "seed_mass_by_species": [
+            st.session_state.get(f"seed_mass_spp{i}", st.session_state.get("seed_mass", 0.05))
+            for i in range(_n)
+        ],
+    }
 
 _saved_defaults = _load_default_config()
 
@@ -416,7 +488,7 @@ with st.sidebar:
 
         col_cfg, col_all = st.columns(2)
 
-        if col_cfg.button("⚙️ Config only", use_container_width=True,
+        if col_cfg.button("⚙️ Config only", width='stretch',
                           help="Populate sidebar parameters; does not restore plots."):
             params = loaded_data.get("parameters", {})
             _apply_config(params)
@@ -425,7 +497,7 @@ with st.sidebar:
             st.rerun()
 
         all_btn = col_all.button(
-            "📊 Everything", use_container_width=True,
+            "📊 Everything", width='stretch',
             disabled=not has_results,
             help="Restore full results + config." if has_results else "No results in this file.",
         )
@@ -686,86 +758,30 @@ with st.sidebar:
         st.subheader("💾 Save Options")
         save_dir = st.text_input("Save directory", value="results", key="save_dir")
 
-        run_btn = st.form_submit_button("▶ Run Simulation", use_container_width=True, type="primary")
+        run_btn = st.form_submit_button("▶ Run Simulation", width='stretch', type="primary")
 
     st.divider()
-    if st.button("⭐ Set as default config", use_container_width=True,
-                 help="Saves current sidebar config as the startup default."):
-        _n = st.session_state.get("N_SPP", 5)
-        _default = {
-            "N_SPP": _n,
-            "H": st.session_state.get("H", 100),
-            "W": st.session_state.get("W", 100),
-            "MAX_AGENTS": st.session_state.get("MAX_AGENTS", 150000),
-            "N_STEPS": st.session_state.get("N_STEPS", 1500),
-            "SEED": st.session_state.get("SEED", 35),
-            "NSEEDS": st.session_state.get("NSEEDS", 1),
-            "scalar_interval": st.session_state.get("scalar_interval", 20),
-            "snapshot_interval": st.session_state.get("snapshot_interval", 50),
-            "growth_rate": st.session_state.get("growth_rate", 0.45),
-            "respiration_rate": st.session_state.get("respiration_rate", 0.015),
-            "turnover_rate": st.session_state.get("turnover_rate", 0.03),
-            "mineralization_rate": st.session_state.get("mineralization_rate", 0.05),
-            "seed_cost": st.session_state.get("seed_cost", 0.02),
-            "seed_mass": st.session_state.get("seed_mass", 0.05),
-            "K_biomass": st.session_state.get("K_biomass", 2.5),
-            "soil_input_rate": st.session_state.get("soil_input_rate", 0.5),
-            "sigma_threshold": st.session_state.get("sigma_threshold", 3.0),
-            "soil_pool_mean": st.session_state.get("soil_pool_mean", 1.5),
-            "soil_pool_std": st.session_state.get("soil_pool_std", 0.1),
-            "soil_ratio_noise": st.session_state.get("soil_ratio_noise", 0.05),
-            "input_drift_scale": st.session_state.get("input_drift_scale", 0.08),
-            "catastrophe_interval": st.session_state.get("catastrophe_interval", 200),
-            "catastrophe_mortality": st.session_state.get("catastrophe_mortality", 0.4),
-            "p_disturbance": st.session_state.get("p_disturbance", 0.01),
-            "disturbance_strength": st.session_state.get("disturbance_strength", 0.7),
-            "demo_noise_std": st.session_state.get("demo_noise_std", 0.003),
-            "weak_disturbance_interval": st.session_state.get("weak_disturbance_interval", 0),
-            "weak_disturbance_mortality": st.session_state.get("weak_disturbance_mortality", 0.4),
-            "strong_disturbance_interval": st.session_state.get("strong_disturbance_interval", 0),
-            "strong_disturbance_mortality": st.session_state.get("strong_disturbance_mortality", 0.4),
-            "env_field_persistence": st.session_state.get("env_field_persistence", 0.85),
-            "env_field_smoothing_passes": st.session_state.get("env_field_smoothing_passes", 2),
-            "shock_field_persistence": st.session_state.get("shock_field_persistence", 0.85),
-            "shock_field_smoothing_passes": st.session_state.get("shock_field_smoothing_passes", 2),
-            "temperature_mean": st.session_state.get("temperature_mean", 0.5),
-            "temperature_amplitude": st.session_state.get("temperature_amplitude", 0.3),
-            "temperature_period": st.session_state.get("temperature_period", 100),
-            "temperature_phase": st.session_state.get("temperature_phase", 0.0),
-            "temperature_spatial_strength": st.session_state.get("temperature_spatial_strength", 0.0),
-            "temperature_growth_strength": st.session_state.get("temperature_growth_strength", 0.5),
-            "temperature_respiration_strength": st.session_state.get("temperature_respiration_strength", 0.3),
-            "temperature_mineralization_strength": st.session_state.get("temperature_mineralization_strength", 0.4),
-            "soil_base_ratio": [
-                st.session_state.get("sbr_n", 0.35),
-                st.session_state.get("sbr_p", 0.10),
-                st.session_state.get("sbr_k", 0.35),
-                st.session_state.get("sbr_o", 0.10),
-            ],
-            "soil_availability_rate": [
-                st.session_state.get("sar_n", 0.4),
-                st.session_state.get("sar_p", 0.1),
-                st.session_state.get("sar_k", 0.1),
-                st.session_state.get("sar_o", 0.3),
-            ],
-            "initial_seeds": [st.session_state.get(f"seeds_{i}", 10) for i in range(_n)],
-            "spp_centers": [
-                [st.session_state.get(f"nc_{s}_{e}", 0.0) for e in range(5)]
-                for s in range(_n)
-            ],
-            "cov_code": st.session_state.get("cov_code", DEFAULT_COV_CODE),
-            "seed_range_scale": st.session_state.get("seed_range_scale", 10.0),
-            "seed_range_alpha": st.session_state.get("seed_range_alpha", 1.0),
-            "seed_mass_by_species": [
-                st.session_state.get(f"seed_mass_spp{i}", st.session_state.get("seed_mass", 0.05))
-                for i in range(_n)
-            ],
-        }
+
+    col_default, col_export = st.columns(2)
+
+    if col_default.button(
+            "⭐ Set as default config",
+            use_container_width=True,
+            help="Saves current sidebar config as the startup default."
+    ):
+        cfg = _build_config_dict()
         os.makedirs(os.path.dirname(DEFAULT_CONFIG_PATH), exist_ok=True)
         with open(DEFAULT_CONFIG_PATH, "w") as f:
-            json.dump(_default, f, indent=2)
+            json.dump(cfg, f, indent=2)
         st.success(f"✅ Default config saved to `{DEFAULT_CONFIG_PATH}`")
 
+    col_export.download_button(
+        "📥 Export params.json",
+        data=json.dumps(_build_config_dict(), indent=2),
+        file_name="params.json",
+        mime="application/json",
+        use_container_width=True,
+    )
 
 # ─────────────────────────────────────────────
 # SIMULATION — ensemble loop
@@ -1035,7 +1051,7 @@ if st.session_state["ran"]:
     with tab_soil:
         if soil is not None:
             st.subheader("Soil Nutrient Distribution at t=0")
-            st.plotly_chart(ep.plot_soil(soil), use_container_width=True)
+            st.plotly_chart(ep.plot_soil(soil), width='stretch')
         else:
             st.info("Soil snapshot not available in this file (saved before v2).")
 
@@ -1046,55 +1062,55 @@ if st.session_state["ran"]:
         col3.metric("Final Agent Count", f"{res['history_agents'][-1]:,}")
 
         st.subheader("Total Mean Biomass")
-        st.plotly_chart(ep.plot_biomass(steps_scalar, res["history_biomass"]), use_container_width=True)
+        st.plotly_chart(ep.plot_biomass(steps_scalar, res["history_biomass"]), width='stretch')
 
         st.subheader("Agent Count")
-        st.plotly_chart(ep.plot_agents(steps_scalar, res["history_agents"]), use_container_width=True)
+        st.plotly_chart(ep.plot_agents(steps_scalar, res["history_agents"]), width='stretch')
 
         elem_arr = res["history_elements"]
         if elem_arr.ndim == 2 and elem_arr.shape[1] > 0:
             st.subheader("Element Pools Over Time")
-            st.plotly_chart(ep.plot_element_pools(steps_scalar, elem_arr), use_container_width=True)
+            st.plotly_chart(ep.plot_element_pools(steps_scalar, elem_arr), width='stretch')
 
         deficit_data = res.get("history_deficit", [])
         if any(len(d) > 0 for d in deficit_data):
             st.subheader("Unmet Nutrient Demand per Species")
             st.plotly_chart(ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS),
-                            use_container_width=True)
+                            width='stretch')
 
         ed_vals = res.get("history_spp_elemental_dissimilarity", [])
         if len(ed_vals) > 0:
             st.subheader("SPP Mean Elemental Dissimilarity Over Time")
             st.plotly_chart(ep.plot_spp_elemental_dissimilarity(steps_scalar, ed_vals),
-                            use_container_width=True)
+                            width='stretch')
 
     with tab_spp:
         st.subheader("Per-Species Mean Biomass" + (f" (avg over {n_seeds_used} seeds)" if n_seeds_used > 1 else ""))
         st.plotly_chart(ep.plot_species_biomass(steps_scalar, res["history_spp_biomass"], RES_SPP_LABELS),
-                        use_container_width=True)
+                        width='stretch')
 
         if n_seeds_used > 1 and "history_spp_biomass_std" in res:
             st.plotly_chart(ep.plot_species_biomass_std(
                 steps_scalar, res["history_spp_biomass"], res["history_spp_biomass_std"], RES_SPP_LABELS
-            ), use_container_width=True)
+            ), width='stretch')
 
         if any(len(f) > 0 for f in res["history_spp_fitness"]):
             st.subheader("Per-Species Mean Fitness")
             st.plotly_chart(ep.plot_species_fitness(steps_scalar, res["history_spp_fitness"], RES_SPP_LABELS),
-                            use_container_width=True)
+                            width='stretch')
 
         dead = res.get("history_spp_dead_fitness_mean", [])
         if any(len(f) > 0 for f in dead):
             st.subheader("Mean Fitness at Time of Death")
-            st.plotly_chart(ep.plot_dead_fitness(steps_scalar, dead, RES_SPP_LABELS), use_container_width=True)
+            st.plotly_chart(ep.plot_dead_fitness(steps_scalar, dead, RES_SPP_LABELS), width='stretch')
 
         spp_age = res.get("history_spp_age", [])
         if any(len(a) > 0 for a in spp_age):
             st.subheader("Mean Agent Age per Species")
-            st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS), use_container_width=True)
+            st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS), width='stretch')
 
         st.subheader("Covariance Matrices")
-        st.plotly_chart(ep.plot_covariance_matrices(SPP_COVARIANCES, RES_SPP_LABELS, dim_labels = ep.ELEMENTS), use_container_width=True)
+        st.plotly_chart(ep.plot_covariance_matrices(SPP_COVARIANCES, RES_SPP_LABELS, dim_labels = ep.ELEMENTS), width='stretch')
 
         element_broadness = pd.DataFrame(
             [np.diag(cov) for cov in SPP_COVARIANCES],
@@ -1150,52 +1166,164 @@ if st.session_state["ran"]:
                 cov2d,
                 axis_labels=(ep.ELEMENTS[dim_x], ep.ELEMENTS[dim_y])
             ),
-            use_container_width=True,
+            width='stretch',
         )
 
 
     with tab_maps:
         @st.fragment
         def _maps_fragment():
+            import matplotlib.pyplot as plt
+            import matplotlib.animation as animation
+            import tempfile, os, base64
+
             n_snaps = len(res["history_biomass_grid"])
+            n_spp   = len(RES_SPP_LABELS)
+
+            # ── Static snapshot slider ─────────────────────────────────────
             snap_i = st.slider(
                 f"Snapshot (recorded every {snapshot_interval} steps)",
-                0, n_snaps - 1, n_snaps - 1, format="Step %d",
+                0, n_snaps - 1, n_snaps - 1,
+                key="map_snap_slider",
                    )
             actual_step = snap_i * snapshot_interval
 
-            # build a (H, W, N_spp) array for this snapshot
-            n_spp = len(RES_SPP_LABELS)
-            grids = [np.array(res["history_spp_grid"][s_id][snap_i])
-                     for s_id in range(n_spp)]  # each (H, W)
-            grid_spp = np.stack(grids, axis=-1)  # (H, W, N_spp)
-
-            # total biomass per cell
-            total = grid_spp.sum(axis=-1, keepdims=True)  # (H, W, 1)
-            # fractional contributions
-            frac = np.divide(
-                grid_spp, total,
-                out=np.zeros_like(grid_spp),
-                where=total > 0
-            )
-
-            # presence rule: any biomass, or set a minimum fraction if you wish
-            # present = grid_spp > 0
-            eps = 1e-9
-            present = grid_spp > eps
-            richness = present.sum(axis=-1).astype(float)
+            grids    = [np.array(res["history_spp_grid"][s][snap_i]) for s in range(n_spp)]
+            grid_spp = np.stack(grids, axis=-1)
+            richness = (grid_spp > 1e-9).sum(axis=-1).astype(float)
 
             st.plotly_chart(
-                ep.plot_spatial_maps(
+                ep.plot_overview_map(
                     res["history_biomass_grid"],
                     res["history_spp_grid"],
-                    snap_i,
-                    actual_step,
+                    snap_i, actual_step,
                     RES_SPP_LABELS,
                     mixed_grid=richness,
                 ),
-                use_container_width=True,
+                width='stretch',
             )
+
+            st.plotly_chart(
+                ep.plot_species_maps(
+                    res["history_spp_grid"],
+                    snap_i, actual_step,
+                    RES_SPP_LABELS,
+                ),
+                width='stretch',
+            )
+
+            st.divider()
+
+            # ── GIF FPS control ────────────────────────────────────────────
+            gif_fps = st.slider("GIF FPS", 1, 10, 2, key="gif_fps")
+
+            def _make_gif(frames, title_prefix, cmap, vmin, vmax, fps):
+                """Render a list of 2D arrays into a GIF, return bytes."""
+                fig, ax = plt.subplots(figsize=(4, 3.5), dpi=90)
+                im  = ax.imshow(frames[0], cmap=cmap, animated=True, vmin=vmin, vmax=vmax)
+                plt.colorbar(im, ax=ax)
+                ttl = ax.set_title(f"{title_prefix} — Step 0")
+                ax.axis("off")
+                plt.tight_layout()
+
+                def _upd(i):
+                    im.set_data(frames[i])
+                    ttl.set_text(f"{title_prefix} — Step {i * snapshot_interval}")
+                    return im, ttl
+
+                ani = animation.FuncAnimation(
+                    fig, _upd, frames=n_snaps,
+                    interval=1000 // fps, blit=True,
+                )
+                with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as tmp:
+                    tmp_path = tmp.name
+                ani.save(tmp_path, writer="pillow", fps=fps)
+                plt.close(fig)
+                with open(tmp_path, "rb") as f:
+                    data = f.read()
+                os.unlink(tmp_path)
+                return data
+
+            def _gif_img_tag(gif_bytes):
+                b64 = base64.b64encode(gif_bytes).decode()
+                return f'<img src="data:image/gif;base64,{b64}" style="width:100%; border-radius:6px;">'
+
+            # ── Pre-compute frame lists ────────────────────────────────────
+            bgrids   = res["history_biomass_grid"]
+            vmax_b   = max(float(np.max(g)) for g in bgrids) or 1.0
+
+            def _richness_frames():
+                out = []
+                for i in range(n_snaps):
+                    g = np.stack([np.array(res["history_spp_grid"][s][i]) for s in range(n_spp)], axis=-1)
+                    out.append((g > 1e-9).sum(axis=-1).astype(float))
+                return out
+
+            def _spp_frames(s):
+                return [np.array(res["history_spp_grid"][s][i]) for i in range(n_snaps)]
+
+            def _spp_vmax(s):
+                return max(float(np.max(res["history_spp_grid"][s][i])) for i in range(n_snaps)) or 1.0
+
+            # ── Figure 1: Biomass + Richness (2 GIFs side-by-side) ─────────
+            st.markdown("### 🗺️ Overview Maps")
+            cache_key_overview = f"gif_overview_{gif_fps}_{n_snaps}"
+            if cache_key_overview not in st.session_state:
+                with st.spinner("Generating overview GIFs…"):
+                    st.session_state[cache_key_overview] = [
+                        _make_gif(bgrids,           "Total Biomass",    "YlGn",   0, vmax_b, gif_fps),
+                        _make_gif(_richness_frames(),"Species Richness", "plasma", 0, n_spp,  gif_fps),
+                    ]
+
+            ov_col1, ov_col2 = st.columns(2)
+            for col, label, idx in [
+                (ov_col1, "Total Biomass",    0),
+                (ov_col2, "Species Richness", 1),
+            ]:
+                gif = st.session_state[cache_key_overview][idx]
+                with col:
+                    st.markdown(f"**{label}**")
+                    st.markdown(_gif_img_tag(gif), unsafe_allow_html=True)
+                    st.download_button(
+                        "⬇️ Download",
+                        data=gif,
+                        file_name=f"{label.lower().replace(' ', '_')}.gif",
+                        mime="image/gif",
+                        key=f"dl_ov_{idx}",
+                    )
+
+            st.divider()
+
+            # ── Figure 2: Per-species (n_spp GIFs in 2-column grid) ────────
+            st.markdown("### 🔬 Per-Species Maps")
+            cache_key_spp = f"gif_spp_{gif_fps}_{n_snaps}"
+            if cache_key_spp not in st.session_state:
+                with st.spinner("Generating per-species GIFs…"):
+                    st.session_state[cache_key_spp] = [
+                        _make_gif(
+                            _spp_frames(s),
+                            RES_SPP_LABELS[s],
+                            "YlOrRd", 0, _spp_vmax(s),
+                            gif_fps,
+                        )
+                        for s in range(n_spp)
+                    ]
+
+            for row_start in range(0, n_spp, 2):
+                cols = st.columns(2)
+                for col_idx, s in enumerate(range(row_start, min(row_start + 2, n_spp))):
+                    gif = st.session_state[cache_key_spp][s]
+                    with cols[col_idx]:
+                        st.markdown(f"**{RES_SPP_LABELS[s]}**")
+                        st.markdown(_gif_img_tag(gif), unsafe_allow_html=True)
+                        st.download_button(
+                            "⬇️ Download",
+                            data=gif,
+                            file_name=f"{RES_SPP_LABELS[s].lower().replace(' ', '_')}.gif",
+                            mime="image/gif",
+                            key=f"dl_spp_{s}",
+                        )
+
         _maps_fragment()
 
     st.divider()
@@ -1209,7 +1337,7 @@ if st.session_state["ran"]:
     )
     clean_name = save_name.strip().replace(" ", "_") or st.session_state["pkl_default_name"]
 
-    if col_save.button("💾 Save to disk", use_container_width=True, type="primary"):
+    if col_save.button("💾 Save to disk", width='stretch', type="primary"):
         os.makedirs(save_dir, exist_ok=True)
         filepath = os.path.join(save_dir, f"{clean_name}.pkl")
         with open(filepath, "wb") as f:
@@ -1224,5 +1352,7 @@ if st.session_state["ran"]:
         data=buf,
         file_name=f"{clean_name}.pkl",
         mime="application/octet-stream",
-        use_container_width=True,
+        width='stretch',
     )
+
+
