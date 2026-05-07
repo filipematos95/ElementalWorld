@@ -108,7 +108,143 @@ def plot_species_fitness(steps: np.ndarray, history_spp_fitness: list,
                       template="plotly_white", height=500)
     return fig
 
+def plot_overview_map(history_biomass_grid: list,
+                      history_spp_grid: list,
+                      snap_i: int,
+                      actual_step: int,
+                      spp_labels: list,
+                      mixed_grid: np.ndarray | None = None) -> go.Figure:
+    """Row 1 only: Total Biomass + Species Richness."""
 
+    col_widths = [1.0, 0.3, 1.0] if mixed_grid is not None else [1.0]
+    ncols      = len(col_widths)
+
+    titles = [f"Total Biomass — t={actual_step}"]
+    if mixed_grid is not None:
+        titles += ["", f"Species Richness — t={actual_step}"]
+
+    fig = sp.make_subplots(
+        rows=1,
+        cols=ncols,
+        subplot_titles=titles,
+        horizontal_spacing=0.02,
+        column_widths=col_widths,
+    )
+
+    fig.add_trace(
+        go.Heatmap(
+            z=np.array(history_biomass_grid[snap_i]).tolist(),
+            coloraxis="coloraxis1",
+            name="Total Biomass",
+        ),
+        row=1, col=1,
+    )
+
+    if mixed_grid is not None:
+        fig.add_trace(
+            go.Heatmap(
+                z=np.array(mixed_grid).tolist(),
+                coloraxis="coloraxis2",
+                name="Species Richness",
+            ),
+            row=1, col=3,
+        )
+
+    total_w    = sum(col_widths)
+    biomass_end  = (col_widths[0] / total_w)                          # right edge of col 1
+    richness_end = 1.0                                                 # right edge of col 3
+
+    x_biomass  = biomass_end - 0.01
+    x_richness = richness_end + 0.01
+
+    fig.update_layout(
+        template="plotly_white",
+        height=400,
+        margin=dict(l=20, r=100, t=50, b=20),
+        coloraxis1=dict(
+            colorscale="YlGn",
+            colorbar=dict(
+                title="Biomass",
+                x=x_biomass,
+                y=0.5,
+                len=0.80,
+                thickness=12,
+                xpad=2,
+            ),
+        ),
+        coloraxis2=dict(
+            colorscale="Viridis",
+            colorbar=dict(
+                title="Richness",
+                x=x_richness,
+                y=0.5,
+                len=0.80,
+                thickness=12,
+                xpad=2,
+            ),
+        ),
+    )
+
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+def plot_species_maps(history_spp_grid: list,
+                      snap_i: int,
+                      actual_step: int,
+                      spp_labels: list) -> go.Figure:
+    """Row 2 only: one subplot per species."""
+    n_spp = len(spp_labels)
+    ncols = n_spp
+
+    horizontal_spacing = max(0.02, min(0.15, 0.18 / ncols))
+
+    titles = [f"{label} — t={actual_step}" for label in spp_labels]
+    titles += [""] * (ncols - len(titles))
+
+    fig = sp.make_subplots(
+        rows=1,
+        cols=ncols,
+        subplot_titles=titles,
+        horizontal_spacing=horizontal_spacing,
+    )
+
+    vmax = max(
+        float(np.max(history_spp_grid[s][snap_i]))
+        for s in range(n_spp)
+    ) or 1.0
+
+    for s_id, label in enumerate(spp_labels):
+        fig.add_trace(
+            go.Heatmap(
+                z=np.array(history_spp_grid[s_id][snap_i]).tolist(),
+                coloraxis="coloraxis1",
+                name=label,
+            ),
+            row=1, col=s_id + 1,
+        )
+
+    fig.update_layout(
+        template="plotly_white",
+        height=380,
+        margin=dict(l=20, r=100, t=50, b=20),
+        coloraxis1=dict(
+            colorscale="Hot",
+            cmin=0,
+            cmax=vmax,
+            colorbar=dict(
+                title="Biomass",
+                x=1.01,
+                y=0.5,
+                len=0.80,
+                thickness=12,
+                xpad=2,
+            ),
+        ),
+    )
+
+    fig.update_yaxes(autorange="reversed")
+    return fig
 def plot_spatial_maps(history_biomass_grid: list,
                       history_spp_grid: list,
                       snap_i: int,
@@ -118,7 +254,7 @@ def plot_spatial_maps(history_biomass_grid: list,
     n_spp = len(spp_labels)
     ncols = max(n_spp, 2)
 
-    row1_titles = [f"Total Biomass — t={actual_step}",
+    row1_titles = [f"Total Biomass — t={actual_step}"," ",
                    f"Species Richness — t={actual_step}" if mixed_grid is not None else ""]
     row1_titles += [""] * (ncols - len(row1_titles))
     row2_titles = [f"{label} — t={actual_step}" for label in spp_labels]
@@ -128,7 +264,7 @@ def plot_spatial_maps(history_biomass_grid: list,
         rows=2,
         cols=ncols,
         subplot_titles=row1_titles + row2_titles,
-        horizontal_spacing=0.04,
+        horizontal_spacing=0.08,
         vertical_spacing=0.12,
     )
 
@@ -175,7 +311,7 @@ def plot_spatial_maps(history_biomass_grid: list,
 
     # bars just to the right of the relevant subplot blocks
     x_biomass  = col_w * 1 - 0.01
-    x_richness = col_w * 2 - 0.01
+    x_richness = col_w * 3 - 0.01
     x_species  = 1.02
 
     fig.update_layout(
@@ -191,6 +327,7 @@ def plot_spatial_maps(history_biomass_grid: list,
                 y=y_row1,
                 len=0.30,
                 thickness=12,
+                xpad=2
             ),
         ),
 
@@ -202,6 +339,7 @@ def plot_spatial_maps(history_biomass_grid: list,
                 y=y_row1,
                 len=0.30,
                 thickness=12,
+                xpad=2
             ),
         ),
 
