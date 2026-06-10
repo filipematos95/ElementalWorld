@@ -2,16 +2,20 @@
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import streamlit as st
+import io
+import json
+import os
+import pickle
+import tempfile
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
+import streamlit as st
 import tensorflow as tf
+
 from models.hybridmodel import HybridEcosystem
 import backend.plotting as ep
-from datetime import datetime
-import pickle, io
-import json
-import tempfile, os
 
 
 st.set_page_config(page_title="Ecosystem Simulator", page_icon="🌿", layout="wide")
@@ -21,16 +25,71 @@ st.markdown("Configure parameters in the sidebar, then click **▶ Run Simulatio
 
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "results", "default_config.json")
 
+ORG_ELEMENTS = ["C", "N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"]
+SOIL_ELEMENTS = ["N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"]
+
+N_ORG = len(ORG_ELEMENTS)
+N_SOIL = len(SOIL_ELEMENTS)
+DEFAULT_N_SPP = 5
+
+
+TRACE_ELEMENTS = {"P", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"}
+
+def _display_scale_for_element(el: str) -> float:
+    if el in {"Fe", "Mn", "Zn"}:
+        return 100000.0   # show 0.00010 as 10.00000
+    if el in TRACE_ELEMENTS:
+        return 10000.0    # show 0.00130 as 13.00000
+    return 1.0
 
 def _load_default_config() -> dict | None:
     if os.path.exists(DEFAULT_CONFIG_PATH):
         with open(DEFAULT_CONFIG_PATH, "r") as f:
             return json.load(f)
     return None
+
+
+def _default_center_row():
+    row = np.zeros(N_ORG, dtype=np.float32)
+    base = {
+        "C": 0.42, "N": 0.021, "P": 0.0013, "K": 0.008, "O": 0.55,
+        "Ca": 0.001, "Mg": 0.001, "S": 0.001, "Fe": 0.0005, "Mn": 0.0001, "Zn": 0.0001,
+    }
+    for i, el in enumerate(ORG_ELEMENTS):
+        row[i] = base.get(el, 0.0)
+    s = row.sum()
+    return (row / s).tolist() if s > 0 else row.tolist()
+
+
+DEFAULT_CENTERS = []
+for i in range(DEFAULT_N_SPP):
+    row = np.array(_default_center_row(), dtype=np.float32)
+    row[0] += (i - 2) * 0.01
+    row = np.clip(row, 1e-6, None)
+    row = row / row.sum()
+    DEFAULT_CENTERS.append(row.tolist())
+
+DEFAULT_COV = np.array(
+    [np.eye(N_ORG, dtype=np.float32) * 0.03 for _ in range(DEFAULT_N_SPP)],
+    dtype=np.float32
+)
+
+DEFAULT_COV_CODE = (
+        "np.array([\n" +
+        ",\n".join(
+            "  np.eye(%d, dtype=np.float32) * 0.03" % N_ORG
+            for _ in range(DEFAULT_N_SPP)
+        ) +
+        "\n], dtype=np.float32)"
+)
+
+
 def _build_config_dict() -> dict:
-    _n = st.session_state.get("N_SPP", 5)
+    _n = st.session_state.get("N_SPP", DEFAULT_N_SPP)
     return {
         "N_SPP": _n,
+        "org_elements": ORG_ELEMENTS,
+        "soil_elements": SOIL_ELEMENTS,
         "H": st.session_state.get("H", 100),
         "W": st.session_state.get("W", 100),
         "MAX_AGENTS": st.session_state.get("MAX_AGENTS", 150000),
@@ -74,20 +133,14 @@ def _build_config_dict() -> dict:
         "temperature_respiration_strength": st.session_state.get("temperature_respiration_strength", 0.3),
         "temperature_mineralization_strength": st.session_state.get("temperature_mineralization_strength", 0.4),
         "soil_base_ratio": [
-            st.session_state.get("sbr_n", 0.35),
-            st.session_state.get("sbr_p", 0.10),
-            st.session_state.get("sbr_k", 0.35),
-            st.session_state.get("sbr_o", 0.10),
+            st.session_state.get(f"sbr_{el.lower()}", 1.0 / N_SOIL) for el in SOIL_ELEMENTS
         ],
         "soil_availability_rate": [
-            st.session_state.get("sar_n", 0.4),
-            st.session_state.get("sar_p", 0.1),
-            st.session_state.get("sar_k", 0.1),
-            st.session_state.get("sar_o", 0.3),
+            st.session_state.get(f"sar_{el.lower()}", 0.2) for el in SOIL_ELEMENTS
         ],
         "initial_seeds": [st.session_state.get(f"seeds_{i}", 10) for i in range(_n)],
         "spp_centers": [
-            [st.session_state.get(f"nc_{s}_{e}", 0.0) for e in range(5)]
+            [st.session_state.get(f"nc_{s}_{e}", 0.0) for e in range(N_ORG)]
             for s in range(_n)
         ],
         "cov_code": st.session_state.get("cov_code", DEFAULT_COV_CODE),
@@ -99,38 +152,15 @@ def _build_config_dict() -> dict:
         ],
     }
 
+
 _saved_defaults = _load_default_config()
-
-DEFAULT_CENTERS = [
-    [0.4192, 0.0208, 0.0014, 0.0077, 0.5509],
-    [0.4282, 0.0201, 0.0011, 0.0097, 0.5408],
-    [0.4020, 0.0223, 0.0011, 0.0072, 0.5674],
-    [0.4400, 0.0267, 0.0014, 0.0097, 0.5221],
-    [0.3839, 0.0195, 0.0017, 0.0055, 0.5894],
-]
-
-DEFAULT_COV_CODE = """np.array([
-  [[0.00027, -0.00011, -0.00001, -0.00001, -0.00009], [-0.00011, 0.00014, 0.00001, 0.00001, 0.00001], [-0.00001, 0.00001, 0.00006, 0.00000, -0.00000], [-0.00001, 0.00001, 0.00000, 0.00007, -0.00001], [-0.00009, 0.00001, -0.00000, -0.00001, 0.00015]],
-  [[0.00049, -0.00003, -0.00000, -0.00004, -0.00033], [-0.00003, 0.00009, 0.00000, -0.00000, 0.00002], [-0.00000, 0.00000, 0.00008, 0.00000, 0.00000], [-0.00004, -0.00000, 0.00000, 0.00010, 0.00002], [-0.00033, 0.00002, 0.00000, 0.00002, 0.00037]],
-  [[0.00098, 0.00002, 0.00000, 0.00000, -0.00087], [0.00002, 0.00015, 0.00000, 0.00001, -0.00005], [0.00000, 0.00000, 0.00013, 0.00000, -0.00000], [0.00000, 0.00001, 0.00000, 0.00014, -0.00002], [-0.00087, -0.00005, -0.00000, -0.00002, 0.00108]],
-  [[0.00053, -0.00000, 0.00000, 0.00003, -0.00045], [-0.00000, 0.00016, 0.00000, 0.00001, -0.00007], [0.00000, 0.00000, 0.00010, 0.00000, -0.00000], [0.00003, 0.00001, 0.00000, 0.00010, -0.00004], [-0.00045, -0.00007, -0.00000, -0.00004, 0.00067]],
-  [[0.00047, 0.00002, -0.00001, -0.00001, -0.00038], [0.00002, 0.00010, 0.00000, 0.00000, -0.00003], [-0.00001, 0.00000, 0.00009, 0.00000, 0.00000], [-0.00001, 0.00000, 0.00000, 0.00010, 0.00000], [-0.00038, -0.00003, 0.00000, 0.00000, 0.00050]]
-], dtype=np.float32)"""
-
-DEFAULT_COV = np.array([
-    [[0.00027, -0.00011, -0.00001, -0.00001, -0.00009], [-0.00011, 0.00014, 0.00001, 0.00001, 0.00001], [-0.00001, 0.00001, 0.00006, 0.00000, -0.00000], [-0.00001, 0.00001, 0.00000, 0.00007, -0.00001], [-0.00009, 0.00001, -0.00000, -0.00001, 0.00015]],
-    [[0.00049, -0.00003, -0.00000, -0.00004, -0.00033], [-0.00003, 0.00009, 0.00000, -0.00000, 0.00002], [-0.00000, 0.00000, 0.00008, 0.00000, 0.00000], [-0.00004, -0.00000, 0.00000, 0.00010, 0.00002], [-0.00033, 0.00002, 0.00000, 0.00002, 0.00037]],
-    [[0.00098, 0.00002, 0.00000, 0.00000, -0.00087], [0.00002, 0.00015, 0.00000, 0.00001, -0.00005], [0.00000, 0.00000, 0.00013, 0.00000, -0.00000], [0.00000, 0.00001, 0.00000, 0.00014, -0.00002], [-0.00087, -0.00005, -0.00000, -0.00002, 0.00108]],
-    [[0.00053, -0.00000, 0.00000, 0.00003, -0.00045], [-0.00000, 0.00016, 0.00000, 0.00001, -0.00007], [0.00000, 0.00000, 0.00010, 0.00000, -0.00000], [0.00003, 0.00001, 0.00000, 0.00010, -0.00004], [-0.00045, -0.00007, -0.00000, -0.00004, 0.00067]],
-    [[0.00047, 0.00002, -0.00001, -0.00001, -0.00038], [0.00002, 0.00010, 0.00000, 0.00000, -0.00003], [-0.00001, 0.00000, 0.00009, 0.00000, 0.00000], [-0.00001, 0.00000, 0.00000, 0.00010, 0.00000], [-0.00038, -0.00003, 0.00000, 0.00000, 0.00050]]
-], dtype=np.float32)
 
 
 # ─────────────────────────────────────────────
 # SESSION STATE INIT
 # ─────────────────────────────────────────────
 for key, default in [
-    ("N_SPP", 5),
+    ("N_SPP", DEFAULT_N_SPP),
     ("results", None),
     ("soil_snapshot", None),
     ("ran", False),
@@ -163,15 +193,10 @@ def _apply_config(params: dict):
         "p_disturbance", "disturbance_strength", "demo_noise_std",
         "env_field_persistence", "env_field_smoothing_passes",
         "shock_field_persistence", "shock_field_smoothing_passes",
-        "seed_range_scale",
-        "seed_range_alpha",
-        "temperature_mean",
-        "temperature_amplitude",
-        "temperature_period",
-        "temperature_phase",
-        "temperature_spatial_strength",
-        "temperature_growth_strength",
-        "temperature_respiration_strength",
+        "seed_range_scale", "seed_range_alpha",
+        "temperature_mean", "temperature_amplitude", "temperature_period",
+        "temperature_phase", "temperature_spatial_strength",
+        "temperature_growth_strength", "temperature_respiration_strength",
         "temperature_mineralization_strength",
     ]
 
@@ -185,13 +210,13 @@ def _apply_config(params: dict):
 
     if "soil_base_ratio" in params:
         vals = params["soil_base_ratio"]
-        for key, val in zip(["sbr_n", "sbr_p", "sbr_k", "sbr_o"], vals):
-            st.session_state[key] = float(val)
+        for el, val in zip(SOIL_ELEMENTS, vals):
+            st.session_state[f"sbr_{el.lower()}"] = float(val)
 
     if "soil_availability_rate" in params:
         vals = params["soil_availability_rate"]
-        for key, val in zip(["sar_n", "sar_p", "sar_k", "sar_o"], vals):
-            st.session_state[key] = float(val)
+        for el, val in zip(SOIL_ELEMENTS, vals):
+            st.session_state[f"sar_{el.lower()}"] = float(val)
 
     if "initial_seeds" in params:
         for i, n in enumerate(params["initial_seeds"][:n_spp]):
@@ -203,7 +228,7 @@ def _apply_config(params: dict):
 
     if "spp_centers" in params:
         for s, row in enumerate(params["spp_centers"][:n_spp]):
-            for e, val in enumerate(row[:5]):
+            for e, val in enumerate(row[:N_ORG]):
                 st.session_state[f"nc_{s}_{e}"] = float(val)
 
     if "cov_code" in params:
@@ -214,14 +239,16 @@ def _apply_everything(data: dict):
     params = data.get("parameters", {})
     _apply_config(params)
 
-    n_spp = int(params.get("N_SPP", st.session_state.get("N_SPP", 5)))
+    n_spp = int(params.get("N_SPP", st.session_state.get("N_SPP", DEFAULT_N_SPP)))
 
     history_biomass = data.get("history_biomass", [])
     history_agents = data.get("history_spp_count", data.get("history_agents", []))
     history_elements = np.array(data.get("history_elements", []))
     history_biomass_grid = data.get("history_biomass_grid", [])
-    history_spp_biomass = data.get("history_spp_biomass", [[] for _ in range(n_spp)])
-    history_spp_grid = data.get("history_spp_biomass_grid", data.get("history_spp_grid", [[] for _ in range(n_spp)]))
+    history_spp_grid = data.get(
+        "history_spp_biomass_grid",
+        data.get("history_spp_grid", [[] for _ in range(n_spp)])
+    )
 
     st.session_state["results"] = {
         "history_biomass": history_biomass,
@@ -251,6 +278,7 @@ def _apply_everything(data: dict):
     st.session_state["run_count"] += 1
     st.session_state["pkl_default_name"] = f"loaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+
 def _make_model(
         H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
@@ -269,9 +297,13 @@ def _make_model(
         temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength
 ):
     return HybridEcosystem(
-        height=H, width=W, max_agents=MAX_AGENTS,
+        height=H,
+        width=W,
+        max_agents=MAX_AGENTS,
         niche_centers=np.array(spp_centers, dtype=np.float32),
         niche_covariances=SPP_COVARIANCES,
+        org_elements=ORG_ELEMENTS,
+        soil_elements=SOIL_ELEMENTS,
         growth_rate=growth_rate,
         respiration_rate=respiration_rate,
         turnover_rate=turnover_rate,
@@ -287,7 +319,7 @@ def _make_model(
         soil_pool_std=soil_pool_std,
         soil_ratio_noise=soil_ratio_noise,
         soil_input_rate=soil_input_rate,
-        soil_availability_rate=sar,
+        soil_availability_rate=np.array(sar, dtype=np.float32),
         input_drift_scale=input_drift_scale,
         sigma_threshold=sigma_threshold,
         catastrophe_interval=catastrophe_interval,
@@ -344,7 +376,8 @@ def _run_one_seed(
     model = _make_model(
         H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
-        mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,K_biomass, sbr,
+        mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,
+        K_biomass, sbr,
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
         sar, input_drift_scale, sigma_threshold,
         catastrophe_interval, catastrophe_mortality,
@@ -369,7 +402,6 @@ def _run_one_seed(
         soil_snap = resume_state["soil"].copy()
         if "step_count" in resume_state:
             model.step_count.assign(resume_state["step_count"])
-        soil_snap = resume_state["soil"].copy()
 
     history_biomass = []
     history_agents = []
@@ -488,8 +520,11 @@ with st.sidebar:
 
         col_cfg, col_all = st.columns(2)
 
-        if col_cfg.button("⚙️ Config only", width='stretch',
-                          help="Populate sidebar parameters; does not restore plots."):
+        if col_cfg.button(
+                "⚙️ Config only",
+                width='stretch',
+                help="Populate sidebar parameters; does not restore plots."
+        ):
             params = loaded_data.get("parameters", {})
             _apply_config(params)
             st.session_state["loaded_final_states"] = loaded_data.get("final_states", None)
@@ -497,7 +532,8 @@ with st.sidebar:
             st.rerun()
 
         all_btn = col_all.button(
-            "📊 Everything", width='stretch',
+            "📊 Everything",
+            width='stretch',
             disabled=not has_results,
             help="Restore full results + config." if has_results else "No results in this file.",
         )
@@ -518,8 +554,14 @@ with st.sidebar:
     st.header("⚙️ Simulation Config")
 
     _prev_n_spp = st.session_state["N_SPP"]
-    N_SPP = st.number_input("Number of Species", min_value=1, max_value=10,
-                            value=st.session_state["N_SPP"], step=1, key="N_SPP")
+    N_SPP = st.number_input(
+        "Number of Species",
+        min_value=1,
+        max_value=10,
+        value=st.session_state["N_SPP"],
+        step=1,
+        key="N_SPP"
+    )
     if N_SPP != _prev_n_spp:
         st.rerun()
 
@@ -532,12 +574,18 @@ with st.sidebar:
         MAX_AGENTS = st.number_input("Max Agents", 10000, 500000, 150000, key="MAX_AGENTS", step=10000)
         N_STEPS = st.slider("Number of Steps", 100, 5000, 1500, key="N_STEPS", step=100)
         SEED = st.number_input("Random Seed", 0, 9999, 35, key="SEED")
-        NSEEDS = st.slider("Ensemble Seeds", 1, 20, 1, key="NSEEDS",
-                           help="Run N simulations from SEED to SEED+N-1 and average results.")
-        scalar_interval = st.number_input("Scalar record interval", 1, 500, 20, key="scalar_interval",
-                                          help="Record biomass/agents/elements every N steps.")
-        snapshot_interval = st.number_input("Spatial snapshot interval", 1, 500, 50, key="snapshot_interval",
-                                            help="Save full grid maps every N steps.")
+        NSEEDS = st.slider(
+            "Ensemble Seeds", 1, 20, 1, key="NSEEDS",
+            help="Run N simulations from SEED to SEED+N-1 and average results."
+        )
+        scalar_interval = st.number_input(
+            "Scalar record interval", 1, 500, 20, key="scalar_interval",
+            help="Record biomass/agents/elements every N steps."
+        )
+        snapshot_interval = st.number_input(
+            "Spatial snapshot interval", 1, 500, 50, key="snapshot_interval",
+            help="Save full grid maps every N steps."
+        )
 
         st.subheader("Biological Rates")
         growth_rate = st.slider("Growth Rate", 0.01, 1.0, 0.45, key="growth_rate", step=0.01)
@@ -548,8 +596,10 @@ with st.sidebar:
         seed_mass = st.slider("Seed Mass", 0.001, 0.1, 0.02, key="seed_mass", step=0.001, format="%.3f")
         K_biomass = st.slider("K Biomass", 0.5, 10.0, 2.5, key="K_biomass", step=0.1)
         soil_input_rate = st.slider("Soil Input Rate", 0.1, 2.0, 0.5, key="soil_input_rate", step=0.05)
-        sigma_threshold = st.slider("Sigma Threshold", 0.1, 5.0, 3.0, key="sigma_threshold", step=0.1,
-                                    help="Niche fitness sensitivity. Lower = steeper fitness drop away from niche center.")
+        sigma_threshold = st.slider(
+            "Sigma Threshold", 0.1, 5.0, 3.0, key="sigma_threshold", step=0.1,
+            help="Niche fitness sensitivity. Lower = steeper fitness drop away from niche center."
+        )
 
         st.subheader("Seed Dispersal")
         seed_range_scale = st.slider("Seed Range Scale", 0.1, 50.0, 10.0, key="seed_range_scale", step=0.1)
@@ -557,35 +607,59 @@ with st.sidebar:
 
         st.subheader("Seed Mass by Species")
         seed_mass_by_species = [
-        st.number_input(f"{SPP_LABELS[i]}", 0.001, 1.0,
-                        float(st.session_state.get(f'seed_mass_spp_{i}', st.session_state.get('seed_mass', 0.05))),
-                        step=0.001, format="%.3f", key=f"seed_mass_spp_{i}")
-        for i in range(N_SPP)]
+            st.number_input(
+                f"{SPP_LABELS[i]}",
+                0.001, 1.0,
+                float(st.session_state.get(f"seed_mass_spp_{i}", st.session_state.get("seed_mass", 0.05))),
+                step=0.001,
+                format="%.3f",
+                key=f"seed_mass_spp_{i}"
+            )
+            for i in range(N_SPP)
+        ]
 
         st.subheader("Soil Parameters")
         soil_pool_mean = st.slider("Soil Pool Mean", 0.5, 3.0, 1.5, key="soil_pool_mean", step=0.1)
         soil_pool_std = st.slider("Soil Pool Std", 0.01, 0.5, 0.1, key="soil_pool_std", step=0.01)
         soil_ratio_noise = st.slider("Soil Ratio Noise", 0.0, 0.2, 0.05, key="soil_ratio_noise", step=0.005)
-        input_drift_scale = st.slider("Input Drift Scale", 0.0, 0.3, 0.08, key="input_drift_scale", step=0.01,
-                                      help="Noise on soil nutrient input ratio each step. Higher = more environmental fluctuation.")
+        input_drift_scale = st.slider(
+            "Input Drift Scale", 0.0, 0.3, 0.08, key="input_drift_scale", step=0.01,
+            help="Noise on soil nutrient input ratio each step. Higher = more environmental fluctuation."
+        )
 
-        st.subheader("Soil Base Ratios [N, P, K, O]")
-        c1, c2 = st.columns(2)
-        sbr = [
-            c1.number_input("N", 0.0, 1.0, 0.35, step=0.05, key="sbr_n"),
-            c1.number_input("P", 0.0, 1.0, 0.10, step=0.05, key="sbr_p"),
-            c2.number_input("K", 0.0, 1.0, 0.35, step=0.05, key="sbr_k"),
-            c2.number_input("O", 0.0, 1.0, 0.10, step=0.05, key="sbr_o"),
-        ]
+        st.subheader(f"Soil Base Ratios {SOIL_ELEMENTS}")
+        soil_cols = st.columns(2)
+        sbr = []
+        for i, el in enumerate(SOIL_ELEMENTS):
+            with soil_cols[i % 2]:
+                sbr.append(
+                    st.number_input(
+                        el,
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=float(st.session_state.get(f"sbr_{el.lower()}", 1.0 / N_SOIL)),
+                        step=0.00001,
+                        format="%.5f",
+                        key=f"sbr_{el.lower()}",
+                    )
+                )
 
-        st.subheader("Soil Availability Rates [N, P, K, O]")
-        c1, c2 = st.columns(2)
-        sar = [
-            c1.number_input("N ", 0.0, 1.0, 0.4, step=0.05, key="sar_n"),
-            c1.number_input("P ", 0.0, 1.0, 0.1, step=0.05, key="sar_p"),
-            c2.number_input("K ", 0.0, 1.0, 0.1, step=0.05, key="sar_k"),
-            c2.number_input("O ", 0.0, 1.0, 0.3, step=0.05, key="sar_o"),
-        ]
+        st.subheader(f"Soil Availability Rates {SOIL_ELEMENTS}")
+        soil_cols = st.columns(2)
+        sar = []
+        for i, el in enumerate(SOIL_ELEMENTS):
+            with soil_cols[i % 2]:
+                sar.append(
+                    st.number_input(
+                        f"{el} ",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=float(st.session_state.get(f"sar_{el.lower()}", 0.2)),
+                        step=0.00001,
+                        format="%.5f",
+                        key=f"sar_{el.lower()}",
+                    )
+                )
 
         st.subheader("Initial Seeds per Species")
         initial_seeds = [
@@ -650,7 +724,6 @@ with st.sidebar:
         )
 
         st.markdown("**Spatial disturbance fields**")
-
         env_field_persistence = st.slider(
             "Env Field Persistence", 0.0, 0.99, 0.85, step=0.01,
             key="env_field_persistence",
@@ -716,28 +789,96 @@ with st.sidebar:
         )
 
         st.divider()
-        st.subheader("🧬 Species Niche Centers")
-        st.caption("Columns = stoichiometric ideal [C, N, P, K, O].")
+        st.subheader("Species Niche Centers")
+        st.caption(
+            "Values are stored in original units. Tiny elements are shown in scaled form for easier editing."
+        )
+
+        with st.expander("Edit centers as code", expanded=False):
+            st.caption("Paste a NumPy/list expression with shape (NSPP, NORG), then click Apply.")
+
+            default_centers_text = np.array2string(
+                np.array(
+                    [[float(st.session_state.get(f"nc_{s}_{e}", DEFAULT_CENTERS[s][e] if s < len(DEFAULT_CENTERS) else 0.0))
+                      for e in range(N_ORG)]
+                     for s in range(N_SPP)],
+                    dtype=np.float32,
+                ),
+                separator=", "
+            )
+
+            centerscode_input = st.text_area(
+                "Centers code",
+                value=default_centers_text,
+                height=180,
+                key="centerscode_input",
+                label_visibility="collapsed",
+            )
+
+            if st.form_submit_button("Apply centers code"):
+                try:
+                    parsed_centers = eval(st.session_state["centerscode_input"], {"np": np})
+                    parsed_centers = np.array(parsed_centers, dtype=np.float32)
+                    expected_shape = (N_SPP, N_ORG)
+                    assert parsed_centers.shape == expected_shape, f"Expected {expected_shape}, got {parsed_centers.shape}"
+
+                    for s in range(N_SPP):
+                        row = parsed_centers[s].copy()
+                        row = np.clip(row, 1e-12, None)
+                        row = row / row.sum()
+
+                        for e in range(N_ORG):
+                            actual = float(row[e])
+                            scale = _display_scale_for_element(ORG_ELEMENTS[e])
+
+                            st.session_state[f"nc_{s}_{e}"] = actual
+                            st.session_state[f"nc_display_{s}_{e}"] = actual * scale
+
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Invalid centers code: {e}")
+                    st.stop()
+
         spp_centers = []
         for s in range(N_SPP):
             st.markdown(f"**Species {s+1}**")
-            cols = st.columns(5)
-            row = [
-                cols[e].number_input(
-                    ep.ELEMENTS[e], 0.0, 1.0,
-                    float(st.session_state.get(
-                        f"nc_{s}_{e}",
-                        DEFAULT_CENTERS[s][e] if s < len(DEFAULT_CENTERS) else 0.0
-                    )),
-                    step=0.01, format="%.3f", key=f"nc_{s}_{e}",
-                )
-                for e in range(5)
-            ]
+            ncols = min(N_ORG, 6)
+            cols = st.columns(ncols)
+            row = []
+
+            for e, el in enumerate(ORG_ELEMENTS):
+                with cols[e % ncols]:
+                    default_val = (
+                        DEFAULT_CENTERS[s][e]
+                        if s < len(DEFAULT_CENTERS) and e < len(DEFAULT_CENTERS[s])
+                        else 0.0
+                    )
+
+                    raw_val = float(st.session_state.get(f"nc_{s}_{e}", default_val))
+                    scale = _display_scale_for_element(el)
+                    shown_val = raw_val * scale
+
+                    shown = st.number_input(
+                        f"{el}" if scale == 1.0 else f"{el} (×{int(scale)})",
+                        min_value=0.0,
+                        max_value=float(scale),
+                        value=float(shown_val),
+                        step=0.00001,
+                        format="%.5f",
+                        key=f"nc_display_{s}_{e}",
+                    )
+
+                    actual = float(shown) / scale
+                    st.session_state[f"nc_{s}_{e}"] = actual
+                    row.append(actual)
+
             spp_centers.append(row)
 
         st.divider()
         st.subheader("🔬 Covariance Matrices")
-        st.caption("Numpy array expression, shape (N_SPP, 5, 5).")
+        st.caption(f"Numpy array expression, shape (N_SPP, {N_ORG}, {N_ORG}).")
+
         cov_code = st.text_area(
             "Covariance code",
             value=st.session_state.get("cov_code", DEFAULT_COV_CODE),
@@ -748,17 +889,22 @@ with st.sidebar:
         try:
             parsed = eval(cov_code, {"np": np})
             SPP_COVARIANCES = np.array(parsed, dtype=np.float32)
-            assert SPP_COVARIANCES.shape == (N_SPP, 5, 5), f"Expected ({N_SPP}, 5, 5), got {SPP_COVARIANCES.shape}"
+            expected_shape = (N_SPP, N_ORG, N_ORG)
+            assert SPP_COVARIANCES.shape == expected_shape, f"Expected {expected_shape}, got {SPP_COVARIANCES.shape}"
             st.success(f"✅ Valid — shape {SPP_COVARIANCES.shape}")
         except Exception as e:
             st.error(f"❌ {e}")
-            SPP_COVARIANCES = np.array([np.eye(5, dtype=np.float32) * 0.03 for _ in range(N_SPP)])
+            SPP_COVARIANCES = np.array(
+                [np.eye(N_ORG, dtype=np.float32) * 0.03 for _ in range(N_SPP)],
+                dtype=np.float32
+            )
 
         st.divider()
         st.subheader("💾 Save Options")
         save_dir = st.text_input("Save directory", value="results", key="save_dir")
 
         run_btn = st.form_submit_button("▶ Run Simulation", width='stretch', type="primary")
+
 
     st.divider()
 
@@ -782,6 +928,7 @@ with st.sidebar:
         mime="application/json",
         use_container_width=True,
     )
+
 
 # ─────────────────────────────────────────────
 # SIMULATION — ensemble loop
@@ -832,10 +979,14 @@ if run_btn:
             env_field_smoothing_passes=env_field_smoothing_passes,
             shock_field_persistence=shock_field_persistence,
             shock_field_smoothing_passes=shock_field_smoothing_passes,
-            scalar_interval=scalar_interval, snapshot_interval=snapshot_interval,
-            prog_offset=i, prog_total=NSEEDS,
-            prog_bar=prog, status_el=status,
-            resume_state=resume_state, start_step=start_step,
+            scalar_interval=scalar_interval,
+            snapshot_interval=snapshot_interval,
+            prog_offset=i,
+            prog_total=NSEEDS,
+            prog_bar=prog,
+            status_el=status,
+            resume_state=resume_state,
+            start_step=start_step,
             seed_mass_by_species=seed_mass_by_species,
             seed_range_scale=seed_range_scale,
             seed_range_alpha=seed_range_alpha,
@@ -946,8 +1097,15 @@ if run_btn:
 
     st.session_state["payload"] = {
         "parameters": {
-            "H": H, "W": W, "MAX_AGENTS": MAX_AGENTS, "N_STEPS": completed_steps,
-            "SEED": SEED, "NSEEDS": NSEEDS,
+            "H": H,
+            "W": W,
+            "MAX_AGENTS": MAX_AGENTS,
+            "N_STEPS": completed_steps,
+            "SEED": SEED,
+            "NSEEDS": NSEEDS,
+            "N_SPP": N_SPP,
+            "org_elements": ORG_ELEMENTS,
+            "soil_elements": SOIL_ELEMENTS,
             "spp_centers": spp_centers,
             "spp_covariances": SPP_COVARIANCES.tolist(),
             "soil_base_ratio": sbr,
@@ -985,7 +1143,6 @@ if run_btn:
             "scalar_interval": scalar_interval,
             "snapshot_interval": snapshot_interval,
             "cov_code": cov_code,
-            "N_SPP": N_SPP,
             "temperature_mean": temperature_mean,
             "temperature_amplitude": temperature_amplitude,
             "temperature_period": temperature_period,
@@ -1075,29 +1232,43 @@ if st.session_state["ran"]:
         deficit_data = res.get("history_deficit", [])
         if any(len(d) > 0 for d in deficit_data):
             st.subheader("Unmet Nutrient Demand per Species")
-            st.plotly_chart(ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS),
-                            width='stretch')
+            st.plotly_chart(
+                ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS),
+                width='stretch'
+            )
 
         ed_vals = res.get("history_spp_elemental_dissimilarity", [])
         if len(ed_vals) > 0:
             st.subheader("SPP Mean Elemental Dissimilarity Over Time")
-            st.plotly_chart(ep.plot_spp_elemental_dissimilarity(steps_scalar, ed_vals),
-                            width='stretch')
+            st.plotly_chart(
+                ep.plot_spp_elemental_dissimilarity(steps_scalar, ed_vals),
+                width='stretch'
+            )
 
     with tab_spp:
         st.subheader("Per-Species Mean Biomass" + (f" (avg over {n_seeds_used} seeds)" if n_seeds_used > 1 else ""))
-        st.plotly_chart(ep.plot_species_biomass(steps_scalar, res["history_spp_biomass"], RES_SPP_LABELS),
-                        width='stretch')
+        st.plotly_chart(
+            ep.plot_species_biomass(steps_scalar, res["history_spp_biomass"], RES_SPP_LABELS),
+            width='stretch'
+        )
 
         if n_seeds_used > 1 and "history_spp_biomass_std" in res:
-            st.plotly_chart(ep.plot_species_biomass_std(
-                steps_scalar, res["history_spp_biomass"], res["history_spp_biomass_std"], RES_SPP_LABELS
-            ), width='stretch')
+            st.plotly_chart(
+                ep.plot_species_biomass_std(
+                    steps_scalar,
+                    res["history_spp_biomass"],
+                    res["history_spp_biomass_std"],
+                    RES_SPP_LABELS
+                ),
+                width='stretch'
+            )
 
         if any(len(f) > 0 for f in res["history_spp_fitness"]):
             st.subheader("Per-Species Mean Fitness")
-            st.plotly_chart(ep.plot_species_fitness(steps_scalar, res["history_spp_fitness"], RES_SPP_LABELS),
-                            width='stretch')
+            st.plotly_chart(
+                ep.plot_species_fitness(steps_scalar, res["history_spp_fitness"], RES_SPP_LABELS),
+                width='stretch'
+            )
 
         dead = res.get("history_spp_dead_fitness_mean", [])
         if any(len(f) > 0 for f in dead):
@@ -1110,16 +1281,16 @@ if st.session_state["ran"]:
             st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS), width='stretch')
 
         st.subheader("Covariance Matrices")
-        st.plotly_chart(ep.plot_covariance_matrices(SPP_COVARIANCES, RES_SPP_LABELS, dim_labels = ep.ELEMENTS), width='stretch')
+        st.plotly_chart(
+            ep.plot_covariance_matrices(SPP_COVARIANCES, RES_SPP_LABELS, dim_labels=ORG_ELEMENTS),
+            width='stretch'
+        )
 
         element_broadness = pd.DataFrame(
             [np.diag(cov) for cov in SPP_COVARIANCES],
-            columns=ep.ELEMENTS,
+            columns=ORG_ELEMENTS,
             index=RES_SPP_LABELS
-
         )
-
-
         element_broadness["Total"] = [np.trace(cov) for cov in SPP_COVARIANCES]
 
         styled_broadness = (
@@ -1132,7 +1303,6 @@ if st.session_state["ran"]:
         st.table(styled_broadness)
 
         st.subheader("Mahalanobis Covariance View")
-
         c1, c2, c3 = st.columns([1, 1, 1])
 
         with c1:
@@ -1146,17 +1316,17 @@ if st.session_state["ran"]:
         with c2:
             dim_x = st.selectbox(
                 "X axis",
-                options=list(range(5)),
-                format_func=lambda i: ep.ELEMENTS[i],
+                options=list(range(N_ORG)),
+                format_func=lambda i: ORG_ELEMENTS[i],
                 key="cov_dim_x",
             )
 
         with c3:
             dim_y = st.selectbox(
                 "Y axis",
-                options=list(range(5)),
-                format_func=lambda i: ep.ELEMENTS[i],
-                index=1,
+                options=list(range(N_ORG)),
+                format_func=lambda i: ORG_ELEMENTS[i],
+                index=1 if N_ORG > 1 else 0,
                 key="cov_dim_y",
             )
 
@@ -1164,23 +1334,25 @@ if st.session_state["ran"]:
         st.plotly_chart(
             ep.plot_mahalanobis_contours(
                 cov2d,
-                axis_labels=(ep.ELEMENTS[dim_x], ep.ELEMENTS[dim_y])
+                axis_labels=(ORG_ELEMENTS[dim_x], ORG_ELEMENTS[dim_y])
             ),
             width='stretch',
         )
 
-
     with tab_maps:
         @st.fragment
         def _maps_fragment():
-            import matplotlib.pyplot as plt
+            import base64
             import matplotlib.animation as animation
-            import tempfile, os, base64
+            import matplotlib.pyplot as plt
 
             n_snaps = len(res["history_biomass_grid"])
-            n_spp   = len(RES_SPP_LABELS)
+            n_spp = len(RES_SPP_LABELS)
 
-            # ── Static snapshot slider ─────────────────────────────────────
+            if n_snaps == 0:
+                st.info("No spatial snapshots recorded. Increase snapshot frequency or run the simulation again.")
+                return
+
             snap_i = st.slider(
                 f"Snapshot (recorded every {snapshot_interval} steps)",
                 0, n_snaps - 1, n_snaps - 1,
@@ -1188,7 +1360,7 @@ if st.session_state["ran"]:
                    )
             actual_step = snap_i * snapshot_interval
 
-            grids    = [np.array(res["history_spp_grid"][s][snap_i]) for s in range(n_spp)]
+            grids = [np.array(res["history_spp_grid"][s][snap_i]) for s in range(n_spp)]
             grid_spp = np.stack(grids, axis=-1)
             richness = (grid_spp > 1e-9).sum(axis=-1).astype(float)
 
@@ -1214,13 +1386,11 @@ if st.session_state["ran"]:
 
             st.divider()
 
-            # ── GIF FPS control ────────────────────────────────────────────
             gif_fps = st.slider("GIF FPS", 1, 10, 2, key="gif_fps")
 
             def _make_gif(frames, title_prefix, cmap, vmin, vmax, fps):
-                """Render a list of 2D arrays into a GIF, return bytes."""
                 fig, ax = plt.subplots(figsize=(4, 3.5), dpi=90)
-                im  = ax.imshow(frames[0], cmap=cmap, animated=True, vmin=vmin, vmax=vmax)
+                im = ax.imshow(frames[0], cmap=cmap, animated=True, vmin=vmin, vmax=vmax)
                 plt.colorbar(im, ax=ax)
                 ttl = ax.set_title(f"{title_prefix} — Step 0")
                 ax.axis("off")
@@ -1248,9 +1418,8 @@ if st.session_state["ran"]:
                 b64 = base64.b64encode(gif_bytes).decode()
                 return f'<img src="data:image/gif;base64,{b64}" style="width:100%; border-radius:6px;">'
 
-            # ── Pre-compute frame lists ────────────────────────────────────
-            bgrids   = res["history_biomass_grid"]
-            vmax_b   = max(float(np.max(g)) for g in bgrids) or 1.0
+            bgrids = res["history_biomass_grid"]
+            vmax_b = max(float(np.max(g)) for g in bgrids) or 1.0
 
             def _richness_frames():
                 out = []
@@ -1265,19 +1434,18 @@ if st.session_state["ran"]:
             def _spp_vmax(s):
                 return max(float(np.max(res["history_spp_grid"][s][i])) for i in range(n_snaps)) or 1.0
 
-            # ── Figure 1: Biomass + Richness (2 GIFs side-by-side) ─────────
             st.markdown("### 🗺️ Overview Maps")
             cache_key_overview = f"gif_overview_{gif_fps}_{n_snaps}"
             if cache_key_overview not in st.session_state:
                 with st.spinner("Generating overview GIFs…"):
                     st.session_state[cache_key_overview] = [
-                        _make_gif(bgrids,           "Total Biomass",    "YlGn",   0, vmax_b, gif_fps),
-                        _make_gif(_richness_frames(),"Species Richness", "plasma", 0, n_spp,  gif_fps),
+                        _make_gif(bgrids, "Total Biomass", "YlGn", 0, vmax_b, gif_fps),
+                        _make_gif(_richness_frames(), "Species Richness", "plasma", 0, n_spp, gif_fps),
                     ]
 
             ov_col1, ov_col2 = st.columns(2)
             for col, label, idx in [
-                (ov_col1, "Total Biomass",    0),
+                (ov_col1, "Total Biomass", 0),
                 (ov_col2, "Species Richness", 1),
             ]:
                 gif = st.session_state[cache_key_overview][idx]
@@ -1294,7 +1462,6 @@ if st.session_state["ran"]:
 
             st.divider()
 
-            # ── Figure 2: Per-species (n_spp GIFs in 2-column grid) ────────
             st.markdown("### 🔬 Per-Species Maps")
             cache_key_spp = f"gif_spp_{gif_fps}_{n_snaps}"
             if cache_key_spp not in st.session_state:
@@ -1354,5 +1521,3 @@ if st.session_state["ran"]:
         mime="application/octet-stream",
         width='stretch',
     )
-
-
