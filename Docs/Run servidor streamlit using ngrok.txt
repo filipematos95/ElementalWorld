@@ -1,0 +1,58 @@
+Run servidor streamlit using ngrok 
+
+Terminal tab 1: 
+
+git pull
+source elemental_env/bin/activate
+streamlit run frontend/simulation_frontend.py --server.headless true --server.enableCORS false --server.enableXsrfProtection false
+
+Terminal tab 2: 
+ngrok http 8501
+
+return: https://rachiform-maura-reprehensively.ngrok-free.dev 
+
+COMPLETE:
+
+Perfect! Clean fresh start. Follow these exact commands in order:
+
+1. Kill Any Old Sessions
+bash
+screen -ls
+# If any exist: screen -wipe && killall screen  # (optional)
+2. Environment & Directory
+bash
+cd ~/ElementalWorld
+source elemental_env/bin/activate
+pip install streamlit pyngrok --upgrade  # Ensure latest
+3. NEW Screen Session
+bash
+screen -S streamlit-ngrok
+4. Window 1: Streamlit
+bash
+streamlit run simulation_frontend.py \
+  --server.port 8501 \
+  --server.headless true \
+  --server.address 0.0.0.0
+Wait until you see: Local URL: http://localhost:8501 and Network URL: http://0.0.0.0:8501.
+
+5. Window 2: Ngrok
+Press Ctrl+A then C
+
+bash
+ngrok http 8501
+You MUST see (within 10 seconds):
+
+text
+                 Session Status                online
+                 Account                       your@email.com
+                 Version                       3.x.x
+                 Region                        United States (us)
+                 Latency                       45ms
+                 
+         Forwarding                    https://abc123.ngrok-free.app -> http://localhost:8501
+6. Test & Detach
+Test: Visit the HTTPS URL above
+
+Detach: Ctrl+A D
+
+Copy-paste the ngrok output (especially first 10 lines) if no URL appears. Ready?
