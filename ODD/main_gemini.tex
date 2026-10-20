@@ -1,0 +1,549 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{geometry}
+\usepackage{tikz}
+\usepackage{hyperref}
+\usepackage{float}
+
+\usetikzlibrary{shapes.geometric, arrows, positioning, fit, backgrounds}
+
+\geometry{margin=1in}
+
+\title{\textbf{Model Description of the Elemental World (\texttt{ODD 2020 Protocol})}}
+\author{\textbf{Filipe M. Andrade, Roberto Molowny-Horas, Marcos Fernandez-Martinez}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\abstract{
+
+}
+
+\section{Overview}
+
+\subsection{Purpose and Patterns}
+The primary purpose of the \texttt{HybridEcosystem} model is to investigate how individual elemental composition  adaptation, multi-elemental resource competition, local soil nutrient cycling, and spatial environmental heterogeneity interact to govern species coexistence, community assembly and ecosystem resilience under disturbance regimes.
+
+The model is designed to observe and reproduce several ecological patterns:
+
+\begin{enumerate}
+    \item Species coexistence and niche differentiation based on multi-elemental composition optima.
+    \item Spatial self-organization of plant biomass driven by localized competition and seed dispersal constraints.
+    \item Stoichiometric limitation and quota-based growth dynamics following Liebig's Law of the Minimum.
+    \item Ecosystem collapse, recovery, and compositional shifts under periodic environmental catastrophes and strength-dependent disturbance filters.
+\end{enumerate}
+
+\subsection{Entities, State Variables, and Scales}
+
+\subsubsection{Entities}
+The model consists of three core entity types:
+\begin{enumerate}
+    \item \textbf{Individual Agents (Plants):} Mobile/spatial individual organisms buffer holding up to $M = \text{\texttt{MAX\_AGENTS}}$ entries.
+    \item \textbf{Grid Cells (Soil Environment):} A 2D regular spatial grid of size $H \times W$ containing inorganic and organic soil nutrient pools.
+    \item \textbf{Global Macro-Environment:} Global temperature dynamics and spatial noise fields.
+\end{enumerate}
+
+\subsubsection{Spatial and Temporal Scales}
+\begin{itemize}
+    \item \textbf{Spatial Domain:} A two-dimensional grid of height $H$ cells and width $W$ cells. Toroidal boundary conditions (periodic boundaries) apply during seed dispersal.
+    \item \textbf{Spatial Scale:} 1 grid cell represents a localized spatial unit holding plant biomass and soil nutrient pools (spatial cell area is dimensionless/arbitrary).
+    \item \textbf{Temporal Domain:} Discrete time steps $t \in \{0, 1, 2, \dots, T\}$. Each time step represents an arbitrary ecological update period (e.g., day).
+\end{itemize}
+
+\subsection{Process Overview and Scheduling}
+Within every discrete time step $t$, the simulation executes processes in the following synchronous and sequential order:
+
+\begin{enumerate}
+    \item \textbf{Soil Inorganic Diffusion and Inflow:} Soil inorganic pools diffuse via a $3 \times 3$ depthwise spatial kernel. Stochastic atmospheric nutrient inflow with potential pulse shocks is added.
+    \item \textbf{Environmental Field Updating:} Persistent environmental ($\mathbf{E}$) and shock ($\mathbf{S}$) fields update via autoregressive smoothed Gaussian noise, and global temperature $T(t)$ updates sinusoidally.
+    \item \textbf{Localized Patch Disturbance:} Random spatial disturbance events deplete local inorganic soil nutrient pools within a radius $R_{\text{dist}}$.
+    \item \textbf{Agent Niche Fitness Calculation:} Each active agent evaluates its elemental niche fitness $w_i(t)$ based on the Mahalanobis distance between its internal elementome ratio $\boldsymbol{q}_i$ and its species niche center $\boldsymbol{c}_{s_i}$.
+    \item \textbf{Nutrient Uptake and Limitation:} Agents determine growth potential, take up carbon internally and draw inorganic soil nutrients via Michaelis-Menten kinetics. Growth is constrained by element cell quotas (Liebig's Law) and local crowding/biomass capacity $K_{\text{bio}}$.
+    \item \textbf{Biomass Update, Respiration, and Demographic Stochasticity:} Realized biomass growth is added, temperature-dependent respiration is subtracted and demographic noise is applied.
+    \item \textbf{Mortality and Disturbance Filters:} Agents undergo viability filters, periodic catastrophes, weak niche-dependent disturbances and strong mass-dependent disturbances.
+    \item \textbf{Turnover, Recycling, and Mineralization:} Biomass from dead agents and living turnover is recycled into local organic soil pools. Organic soil pools undergo temperature-dependent mineralization into inorganic soil pools.
+    \item \textbf{Reproduction and Dispersal:} Eligible fertile agents spend biomass $C_{\text{seed}}$ to generate seeds, which disperse within a species-specific spatial radius $R_{s_i}$ and establish based on local density constraints.
+\end{enumerate}
+
+\section{Design Concepts}
+
+\subsection{Basic Principles}
+The model synthesizes fundamental principles from elemental ecology, niche theory, and individual-based ecological dynamics. Growth is governed by internal elemental ratios relative to species-specific niche optima. Resource uptake follows Michaelis-Menten saturation kinetics, while growth bottlenecks obey Liebig's Law of the Minimum. Environmental forcing incorporates sinusoidal thermal dynamics and persistent spatial autocorrelated noise fields.
+
+\subsection{Emergence}
+Community structure, species relative abundances, spatial biomass clustering, elemental dissimilarity indices, and total ecosystem biomass emerge dynamically from individual-level resource uptake, stoichiometric constraints, local competition, and disturbance-driven mortality.
+
+\subsection{Adaptation}
+Agents do not possess cognitive or evolutionary adaptive algorithms in the current implementation. Individual elementome $\boldsymbol{q}_i$ are updated dynamically based on ambient elemental uptake ratios and loss processes.
+
+\subsection{Objectives}
+Agents do not explicitly solve optimization problems, their growth and reproduction rates are direct programmatic consequences of physiological state, local resource availability, and environmental conditions. They should be maximizing fitness.
+
+\subsection{Learning}
+Not implemented.
+
+\subsection{Prediction}
+Not implemented.
+
+\subsection{Sensing}
+Agents directly sense:
+\begin{itemize}
+    \item Local inorganic soil nutrient availability $I_{y_i, x_i, k}$.
+    \item Local total biomass density $B_{y_i, x_i}$.
+    \item Local environmental field values $E_{y_i, x_i}$ and shock field values $S_{y_i, x_i}$.
+    \item Local ambient temperature $T_{y_i, x_i}$.
+\end{itemize}
+
+\subsection{Interaction}
+\begin{itemize}
+    \item \textbf{Exploitation Competition:} Agents residing in the same grid cell compete for available inorganic soil nutrients $I_{y,x,k}$.
+    \item \textbf{Interference / Space Competition:} Local biomass accumulation $B_{y,x}$ reduces realized growth through a density-dependent space limitation factor $f^{\text{space}} = \max(0, 1 - B_{y,x}/K_{\text{bio}})$.
+\end{itemize}
+
+\subsection{Stochasticity}
+Stochastic processes are explicitly embedded in:
+\begin{enumerate}
+    \item Stochastic initialization of inorganic soil pools and agent initial positions.
+    \item Drifting nutrient inflow ratios $\boldsymbol{\eta}(t) \sim \mathcal{N}(\boldsymbol{0}, \sigma_{\text{drift}}^2 \mathbf{I})$ and random shock pulses.
+    \item Autoregressive spatial Gaussian fields $\mathbf{E}(t)$ and $\mathbf{S}(t)$.
+    \item Random spatial location of patch disturbance events $(c_y, c_x)$.
+    \item Demographic noise in individual agent biomass updates $\xi_i \sim \mathcal{N}(0, \sigma_{\text{demo}}^2)$.
+    \item Probabilistic survival under catastrophe, weak disturbance, and strong disturbance regimes.
+    \item Probabilistic seed production $P^{\text{seed}} = 0.1 w_i$, random spatial seed displacement $(\Delta y, \Delta x)$, and probabilistic seedling establishment.
+\end{enumerate}
+
+\subsection{Collectives}
+Agents of the same species $s$ share species-level traits (niche centers $\boldsymbol{c}_s$, covariance matrices $\boldsymbol{\Sigma}_s$, and seed mass $m_{\text{seed}, s}$). However, collectives do not form explicit computational entities or social structures.
+
+\subsection{Observation}
+The model tracks and outputs:
+\begin{itemize}
+    \item Total active agent count $N_{\text{agents}}(t)$.
+    \item Spatial grid of species-specific and total biomass $B_{y,x}(t)$.
+    \item Total ecosystem elemental pools $\sum_{i} m_i \boldsymbol{q}_i$.
+    \item Mean agent age $\bar{\tau}(t)$ and species-level mean age $\bar{\tau}_s(t)$.
+    \item Mean niche fitness of living and dead agents per species.
+    \item Per-species nutrient deficit vectors $D_{s, k}(t)$.
+    \item Agent-level and species-level elemental dissimilarity indices based on Mahalanobis distance.
+\end{itemize}
+
+\section{Details}
+
+\subsection{Initialization}
+
+\subsubsection{Spatial and Soil Initialization}
+The soil variable $\mathbf{Soil} \in \mathbb{R}^{H \times W \times 2 N_{\text{soil}}}$ is initialized deterministically and stochastically:
+\begin{enumerate}
+    \item A base ratio vector $\boldsymbol{r}^{\text{base}} \in \mathbb{R}^{N_{\text{soil}}}$ is normalized such that $\sum_{k=0}^{N_{\text{soil}}-1} r^{\text{base}}_k = 1.0$.
+    \item Spatial Gaussian noise $\boldsymbol{\eta}^{\text{soil}}_{y,x,k} \sim \mathcal{N}(0, \sigma_{\text{noise}}^2)$ with $\sigma_{\text{noise}} = 0.05$ is generated.
+    \item Spatial noise is smoothed via 2D depthwise convolution with a $3 \times 3$ Gaussian kernel ($\sigma=1.0$), standardized to standard deviation $\sigma_{\text{noise}}$, and blended with raw noise ($\alpha=0.5$).
+    \item Soil base ratio with noise is constructed: $\boldsymbol{r}'_{y,x} = \max(0.001, \boldsymbol{r}^{\text{base}} + \mathbf{noise}_{y,x})$.
+    \item Normalized soil ratio: $\boldsymbol{r}^{\text{inorg}}_{y,x} = \boldsymbol{r}'_{y,x} / \sum_{k} r'_{y,x,k}$.
+    \item Pool size $S_{y,x} = \max(0.5, \mathcal{N}(\mu_{\text{pool}}, \sigma_{\text{pool}}^2))$ with $\mu_{\text{pool}}=1.0, \sigma_{\text{pool}}=0.01$.
+    \item Initial inorganic soil pool: $I_{y,x,k}(0) = r^{\text{inorg}}_{y,x,k} \cdot S_{y,x}$.
+    \item Initial organic soil pool: $O_{y,x,k}(0) = 0.0$.
+\end{enumerate}
+
+\subsubsection{Agent Population Initialization}
+Agents are added via \texttt{add\_initial\_seeds(count, species\_id)}:
+\begin{itemize}
+    \item Coordinates $y_i \sim U(0, H)$, $x_i \sim U(0, W)$.
+    \item Species ID $s_i = \text{species\_id}$, initial mass $m_i(0) = 0.1$, age $\tau_i(0) = 0.0$, alive status $\alpha_i(0) = 1.0$.
+    \item Elementome vector $\boldsymbol{q}_i(0)$ is generated by sampling raw values $\boldsymbol{q}^{\text{raw}}_i = \boldsymbol{c}_{s_i} \odot \boldsymbol{\xi}$, where $\boldsymbol{\xi} \sim \mathcal{N}(\boldsymbol{1}, 0.05^2 \mathbf{I})$, and normalizing $\boldsymbol{q}_i(0) = \boldsymbol{q}^{\text{raw}}_i / \sum_e q^{\text{raw}}_{i,e}$.
+\end{itemize}
+
+\subsection{Input Data}
+The model does not rely on external empirical input data files. All inputs, environmental fields, and perturbations are generated dynamically by internal stochastic and deterministic equations.
+
+\subsection{Submodels}
+
+\subsubsection{Soil Biogeochemistry, Spatial Diffusion, and External Inflow}
+Inorganic soil nutrients undergo spatial diffusion via a normalized $3 \times 3$ smoothing kernel $K$:
+\begin{equation}
+K = \begin{bmatrix} 0.05 & 0.10 & 0.05 \\ 0.10 & 0.40 & 0.10 \\ 0.05 & 0.10 & 0.05 \end{bmatrix}
+\end{equation}
+
+Symmetrically padded inorganic nutrient pools $\mathbf{I}(t)$ are convolved depthwise:
+\begin{equation}
+I^{\text{diff}}_{y,x,k}(t) = \sum_{dy=-1}^{1} \sum_{dx=-1}^{1} K_{dy+1, dx+1} \cdot I_{y+dy, x+dx, k}(t)
+\end{equation}
+
+External inorganic nutrient inflow is governed by base ratios $\boldsymbol{r}^{\text{base}}$ subjected to drift noise $\boldsymbol{\eta}(t) \sim \mathcal{N}(\boldsymbol{0}, \sigma_{\text{drift}}^2 \mathbf{I})$ with scale $\sigma_{\text{drift}} = 0.08$:
+\begin{equation}
+r'_k(t) = \max\left(0.001, r^{\text{base}}_k + \eta_k(t)\right), \quad r''_k(t) = \frac{r'_k(t)}{\sum_{j=0}^{N_{\text{soil}}-1} r'_j(t)}
+\end{equation}
+
+Pulse events occur with probability $p_{\text{pulse}} = 0.005$. If triggered, pulse indicator $\pi(t)=1$ (else $0$), multiplying inflow by a shock factor $F_{\text{shock}} \sim U(0.1, 3.0)$:
+\begin{equation}
+r^{\text{in}}_k(t) = r''_k(t) \cdot \left(1 + \pi(t) (F_{\text{shock}} - 1)\right)
+\end{equation}
+\begin{equation}
+I^{\text{new}}_{y,x,k}(t) = I^{\text{diff}}_{y,x,k}(t) + r^{\text{in}}_k(t) \cdot I_{\text{rate}}
+\end{equation}
+where $I_{\text{rate}} = 0.2$.
+
+Localized patch disturbances occur with probability $p_{\text{dist}} = 0.01$. A center $(c_y, c_x)$ is selected uniformly. For cells where Euclidean distance $d_{y,x} = \sqrt{(y-c_y)^2 + (x-c_x)^2} < R_{\text{dist}}$ ($R_{\text{dist}}=8$), inorganic nutrients are depleted:
+\begin{equation}
+I^{\text{dist}}_{y,x,k}(t) = I^{\text{new}}_{y,x,k}(t) \cdot \left(1 - S_{\text{dist}} \cdot E_{y,x}(t)\right)
+\end{equation}
+where $S_{\text{dist}} = 0.7$ and $E_{y,x}(t)$ is the local persistent environmental field. Available soil nutrients are given by:
+\begin{equation}
+I^{\text{avail}}_{y,x,k}(t) = I^{\text{new}}_{y,x,k}(t) \cdot a_{\text{avail}, k}
+\end{equation}
+
+\subsubsection{Environmental Fields and Thermal Dynamics}
+Persistent environmental field $\mathbf{E}(t)$ and shock field $\mathbf{S}(t)$ update via an autoregressive spatial process:
+\begin{equation}
+\mathbf{Z}(t) \sim \mathcal{N}(\boldsymbol{0}, \mathbf{I}), \quad \mathbf{Z}_{\text{smooth}}(t) = \text{AvgPool}_{3\times 3}^{p_{\text{pass}}}\left(\mathbf{Z}(t)\right)
+\end{equation}
+\begin{equation}
+\mathbf{E}'(t) = \rho_{\text{env}} \mathbf{E}(t-1) + (1 - \rho_{\text{env}}) \mathbf{Z}_{\text{smooth}}(t)
+\end{equation}
+followed by spatial min-max normalisation:
+\begin{equation}
+E_{y,x}(t) = \frac{E'_{y,x}(t) - \min \mathbf{E}'(t)}{\max \mathbf{E}'(t) - \min \mathbf{E}'(t) + 10^{-8}} \in [0, 1]
+\end{equation}
+
+Global temperature $T(t)$ follows a sinusoidal regime:
+\begin{equation}
+T(t) = T_{\text{mean}} + A_T \sin\left(\frac{2\pi (t + \phi_T)}{P_T}\right)
+\end{equation}
+where $T_{\text{mean}} = 0.5, A_T = 0.3, P_T = 100.0, \phi_T = 0.0$. Local temperature at grid cell $(y,x)$ is:
+\begin{equation}
+T_{y,x}(t) = \text{clip}\left(T(t) + \gamma_{\text{sp}} (E_{y,x}(t) - 0.5), 0.0, 1.0\right)
+\end{equation}
+
+\subsubsection{Niche Fitness and Trait-Based Physiology}
+For agent $i$ with elementome $\boldsymbol{q}_i(t)$ and species identity $s_i$, niche fitness $w_i(t)$ is computed using the Mahalanobis distance to species niche center $\boldsymbol{c}_{s_i}$:
+\begin{equation}
+\boldsymbol{\delta}_i(t) = \boldsymbol{q}_i(t) - \boldsymbol{c}_{s_i}
+\end{equation}
+\begin{equation}
+d_{M, i}^2(t) = \boldsymbol{\delta}_i(t)^T \boldsymbol{\Sigma}_{s_i}^{-1} \boldsymbol{\delta}_i(t)
+\end{equation}
+\begin{equation}
+w_i(t) = \text{clip}\left(1.0 - \left(\frac{\sqrt{d_{M, i}^2(t)}}{\sigma_{\text{thresh}}}\right)^2, 0.0, 1.0\right)
+\end{equation}
+where $\sigma_{\text{thresh}} = 3.0$.
+
+\subsubsection{Nutrient Uptake, Quota Bottlenecks, and Growth}
+Desired agent growth depends on niche fitness, intrinsic growth rate $g_0 = 0.7$, biomass $m_i(t)$, and local temperature growth factor $F_g(T_i) = 1 + \beta_g (T_i - 0.5)$ ($\beta_g = 0.5$):
+\begin{equation}
+G_i^{\text{des}}(t) = w_i(t) \cdot g_0 \cdot m_i(t) \cdot \left(1 + \beta_g (T_{y_i, x_i}(t) - 0.5)\right)
+\end{equation}
+
+Carbon uptake is self-supplied via internal carbon quota fraction $q_{i,0}(t)$:
+\begin{equation}
+U_{i, \text{C}}^{\text{pot}}(t) = G_i^{\text{des}}(t) \cdot q_{i,0}(t)
+\end{equation}
+Remaining growth demand $R_i(t) = G_i^{\text{des}}(t) - U_{i, \text{C}}^{\text{pot}}(t)$ is allocated across soil elements according to normalized species soil niche preferences $\tilde{\boldsymbol{n}}_{s_i}$:
+\begin{equation}
+\tilde{n}_{s_i, k} = \frac{c_{s_i, k+1}}{\sum_{j=1}^{N_{\text{soil}}} c_{s_i, j} + 10^{-9}}, \quad k \in \{0, \dots, N_{\text{soil}}-1\}
+\end{equation}
+\begin{equation}
+U_{i, k}^{\text{des}}(t) = R_i(t) \cdot \tilde{n}_{s_i, k}
+\end{equation}
+
+Soil nutrient uptake follows Michaelis-Menten kinetics with half-saturation constant $K_m = 0.1$:
+\begin{equation}
+U_{i, k}(t) = U_{i, k}^{\text{des}}(t) \cdot \frac{I^{\text{avail}}_{y_i, x_i, k}(t)}{I^{\text{avail}}_{y_i, x_i, k}(t) + K_m}
+\end{equation}
+
+Elemental mass pools after uptake are:
+\begin{equation}
+\mathbf{E}_i^{\text{pool}}(t) = m_i(t) \boldsymbol{q}_i(t) + \mathbf{U}_i^{\text{full}}(t)
+\end{equation}
+where $U_{i, 0}^{\text{full}} = U_{i, \text{C}}^{\text{pot}}$ and $U_{i, k+1}^{\text{full}} = U_{i, k}$.
+
+Cell quotas are $Q_{i, e}(t) = E_{i, e}^{\text{pool}}(t) / (m_i(t) + 10^{-9})$. Growth limitation obeys Liebig's Law of the Minimum relative to minimum quota $Q_{\min} = 0.01$:
+\begin{equation}
+g_{i, e}(t) = \max\left(0, 1 - \frac{Q_{\min}}{Q_{i, e}(t) + 10^{-9}}\right), \quad g_i^{\text{lim}}(t) = \min_{e \in \{0,\dots,N_{\text{org}}-1\}} g_{i, e}(t)
+\end{equation}
+
+Density-dependent space limitation factor depends on total local biomass $B_{y_i, x_i}(t) = \sum_{j: (y_j, x_j)=(y_i, x_i)} m_j(t)$ relative to carrying capacity $K_{\text{bio}} = 1.5$:
+\begin{equation}
+f_i^{\text{space}}(t) = \max\left(0, 1 - \frac{B_{y_i, x_i}(t)}{K_{\text{bio}}}\right)
+\end{equation}
+
+Realized growth is:
+\begin{equation}
+G_i^{\text{real}}(t) = \left(U_{i, \text{C}}(t) + \sum_{k=0}^{N_{\text{soil}}-1} U_{i, k}(t)\right) \cdot g_i^{\text{lim}}(t) \cdot f_i^{\text{space}}(t)
+\end{equation}
+
+Maintenance respiration uses temperature factor $F_r(T_i) = 1 + \beta_r (T_i - 0.5)$ ($\beta_r = 0.3$) and rate $r_{\text{resp}} = 0.02$:
+\begin{equation}
+M_i(t) = m_i(t) \cdot r_{\text{resp}} \cdot \left(1 + \beta_r (T_{y_i, x_i}(t) - 0.5)\right)
+\end{equation}
+
+Biomass updates with additive demographic noise $\xi_i(t) \sim \mathcal{N}(0, \sigma_{\text{demo}}^2)$ ($\sigma_{\text{demo}} = 0.003$):
+\begin{equation}
+m_i''(t) = m_i(t) + G_i^{\text{real}}(t) - M_i(t) + \xi_i(t)
+\end{equation}
+Initial viability requires $m_i''(t) > 0.01$, yielding initial alive flag $\alpha_i^{(0)}(t) = \mathbb{I}(m_i''(t) > 0.01)$.
+
+\subsubsection{Mortality and Multi-Tier Disturbance Regimes}
+Surviving alive status $\alpha_i(t)$ is sequentially filtered through three disturbance mechanisms:
+\begin{enumerate}
+    \item \textbf{Catastrophe Event} (if $t \pmod{T_{\text{cat}}} == 0$):
+    \begin{equation}
+    P_i^{\text{cat}}(t) = d_{\text{cat}} \cdot S_{y_i, x_i}(t), \quad \alpha_i^{(1)}(t) = \alpha_i^{(0)}(t) \cdot \mathbb{I}\left(u_{i, \text{cat}} > P_i^{\text{cat}}(t)\right)
+    \end{equation}
+    where $d_{\text{cat}} = 0.4$, $T_{\text{cat}} = 200$, and $u_{i,\text{cat}} \sim U(0,1)$.
+    
+    \item \textbf{Weak Disturbance Event} (if $T_{\text{weak}} > 0$ and $t \pmod{T_{\text{weak}}} == 0$):
+    \begin{equation}
+    P_i^{\text{weak}}(t) = d_{\text{weak}} \cdot E_{y_i, x_i}(t) \cdot \left(1 - w_i(t)\right)^{\alpha_{\text{weak}}}
+    \end{equation}
+    \begin{equation}
+    \alpha_i^{(2)}(t) = \alpha_i^{(1)}(t) \cdot \mathbb{I}\left(u_{i, \text{weak}} > P_i^{\text{weak}}(t)\right)
+    \end{equation}
+    where $d_{\text{weak}} = 0.4, \alpha_{\text{weak}} = 2.0$.
+    
+    \item \textbf{Strong Disturbance Event} (if $T_{\text{strong}} > 0$ and $t \pmod{T_{\text{strong}}} == 0$):
+    \begin{equation}
+    \theta_i(t) = \frac{m_i''(t) - \min_j m_j''(t)}{\max_j m_j''(t) - \min_j m_j''(t) + 10^{-9}}
+    \end{equation}
+    \begin{equation}
+    P_i^{\text{strong}}(t) = d_{\text{strong}} \cdot S_{y_i, x_i}(t) \cdot \left(\theta_i(t)\right)^{\beta_{\text{strong}}}
+    \end{equation}
+    \begin{equation}
+    \alpha_i(t) = \alpha_i^{(2)}(t) \cdot \mathbb{I}\left(u_{i, \text{strong}} > P_i^{\text{strong}}(t)\right)
+    \end{equation}
+    where $d_{\text{strong}} = 0.4, \beta_{\text{strong}} = 2.0$.
+\end{enumerate}
+
+\subsubsection{Turnover, Organic Decay, and Mineralization}
+Surviving agents undergo turnover loss at rate $\mu_{\text{turn}} = 0.02$. Total elemental mass lost per agent from mortality and turnover is:
+\begin{equation}
+L_{i, e}(t) = \left(m_i^+(t) (1 - \alpha_i(t)) + m_i^+(t) \mu_{\text{turn}} \alpha_i(t)\right) \cdot Q_{i, e}(t)
+\end{equation}
+where $m_i^+(t) = \max(0, m_i''(t))$.
+
+Surviving agent final biomass and normalized elemental ratios update as:
+\begin{equation}
+m_i(t+1) = \left(m_i''(t) - m_i^+(t) \mu_{\text{turn}}\right) \cdot \alpha_i(t)
+\end{equation}
+\begin{equation}
+q'_{i, e}(t+1) = \text{clip}\left(\frac{E_{i, e}^{\text{pool}}(t) - L_{i, e}(t)}{m_i(t+1) + 10^{-9}}, 0.01, 0.99\right), \quad q_{i, e}(t+1) = \frac{q'_{i, e}(t+1)}{\sum_j q'_{i, j}(t+1)}
+\end{equation}
+
+Soil recycled organic inputs per grid cell are $F^{\text{fresh}}_{y,x,k}(t) = \sum_{i: (y_i,x_i)=(y,x)} L_{i, k+1}(t)$. Total organic soil pool updates with temperature-dependent mineralization rate $m_{\text{min}} = 0.05$:
+\begin{equation}
+O^{\text{tot}}_{y,x,k}(t) = O_{y,x,k}(t) + F^{\text{fresh}}_{y,x,k}(t)
+\end{equation}
+\begin{equation}
+\Phi^{\text{min}}_{y,x,k}(t) = O^{\text{tot}}_{y,x,k}(t) \cdot m_{\text{min}} \cdot \left(1 + \beta_m (T_{y,x}(t) - 0.5)\right)
+\end{equation}
+\begin{equation}
+O_{y,x,k}(t+1) = O^{\text{tot}}_{y,x,k}(t) - \Phi^{\text{min}}_{y,x,k}(t)
+\end{equation}
+\begin{equation}
+I_{y,x,k}(t+1) = \max\left(0, I^{\text{new}}_{y,x,k}(t) + \Phi^{\text{min}}_{y,x,k}(t) - \sum_{i: (y_i,x_i)=(y,x)} U_{i, k}(t)\right)
+\end{equation}
+
+\subsubsection{Reproduction, Dispersal, and Establishment}
+Surviving agents with biomass $m_i(t+1) > C_{\text{seed}}$ ($C_{\text{seed}} = 0.3$) are eligible to reproduce with probability $P_i^{\text{seed}}(t) = 0.1 w_i(t)$. If reproducing, parent biomass is reduced: $m_i(t+1) \leftarrow m_i(t+1) - C_{\text{seed}}$.
+
+Seed dispersal distance range per species $s_i$ is:
+\begin{equation}
+R_{s_i} = R_{\text{scale}} \cdot \left(m_{\text{seed}, s_i} + \epsilon_{\text{rng}}\right)^{\alpha_{\text{rng}}}
+\end{equation}
+where $R_{\text{scale}} = 10.0, \alpha_{\text{rng}} = 1.0, \epsilon_{\text{rng}} = 10^{-6}$.
+
+Grid offset radius $d_{\text{spread}} = \max(1, \lfloor \text{round}(R_{s_i}) \rfloor)$. Spatial integer offsets $\Delta y, \Delta x$ are drawn uniformly from $\{-d_{\text{spread}}, \dots, d_{\text{spread}}\}$. Offspring coordinates on the toroidal grid are:
+\begin{equation}
+y_{\text{off}} = (y_i + \Delta y) \pmod H, \quad x_{\text{off}} = (x_i + \Delta x) \pmod W
+\end{equation}
+
+Seedling establishment probability depends on pre-existing local biomass density $B_{y_{\text{off}}, x_{\text{off}}}$:
+\begin{equation}
+P^{\text{est}} = \max\left(0, 1 - \frac{B_{y_{\text{off}}, x_{\text{off}}}}{K_{\text{bio}}}\right)
+\end{equation}
+Established seedlings inherit the parent's updated elementome ratio $\boldsymbol{q}_i(t+1)$ and start with species seed mass $m_{\text{seed}, s_i}$ and age $\tau = 0$.
+
+\section{Mathematical Analysis and Conservation Properties}
+
+\subsection{Elemental Conservation Analysis}
+To evaluate whether elemental mass is strictly conserved in the model, consider the total mass $M_k^{\text{tot}}(t)$ of soil element $k \in \{0, \dots, N_{\text{soil}}-1\}$ across the entire system:
+\begin{equation}
+M_k^{\text{tot}}(t) = \sum_{y=0}^{H-1} \sum_{x=0}^{W-1} \left( I_{y,x,k}(t) + O_{y,x,k}(t) \right) + \sum_{i=1}^{M} \alpha_i(t) m_i(t) q_{i, k+1}(t)
+\end{equation}
+
+Summing the explicit update equations yields:
+\begin{equation}
+M_k^{\text{tot}}(t+1) - M_k^{\text{tot}}(t) = \sum_{y,x} \left( r^{\text{in}}_k(t) I_{\text{rate}} - \text{Disturbance Losses} \right) - \sum_{i \in \text{Repro}} C_{\text{seed}} q_{i, k+1} + \sum_{\text{offspring}} m_{\text{seed}, s_i} q_{i, k+1}
+\end{equation}
+
+\begin{quote}
+\textbf{Mathematical Implication on Conservation Laws:} The model does \textbf{NOT} satisfy global mass conservation. Elemental mass enters non-conservatively via external atmospheric inflow ($I_{\text{rate}}$), random pulse shocks, and seed creation when $C_{\text{seed}} \neq m_{\text{seed}, s_i}$. Conversely, elemental mass is lost via localized patch disturbances and clipping constraints on soil pools ($I_{y,x,k} \ge 0$).
+\end{quote}
+
+\section{Parameters and State Variables}
+
+\begin{longtable}{lllp{4.5cm}l}
+\caption{Complete Specification of Model Parameters.} \label{tab:parameters} \\
+\toprule
+\textbf{Symbol} & \textbf{Code Parameter} & \textbf{Default Value} & \textbf{Meaning / Role} & \textbf{Units} \\
+\midrule
+\endhead
+$H$ & \texttt{height} & -- & Grid height & cells \\
+$W$ & \texttt{width} & -- & Grid width & cells \\
+$M$ & \texttt{max\_agents} & -- & Maximum agent buffer size & agents \\
+$g_0$ & \texttt{growth\_rate} & $0.7$ & Base growth rate & $\text{step}^{-1}$ \\
+$r_{\text{resp}}$ & \texttt{respiration\_rate} & $0.02$ & Base maintenance respiration rate & $\text{step}^{-1}$ \\
+$\mu_{\text{turn}}$ & \texttt{turnover\_rate} & $0.02$ & Biomass turnover fraction & $\text{step}^{-1}$ \\
+$m_{\text{min}}$ & \texttt{mineralization\_rate} & $0.05$ & Base organic mineralization rate & $\text{step}^{-1}$ \\
+$C_{\text{seed}}$ & \texttt{seed\_cost} & $0.3$ & Biomass cost to produce a seed & mass \\
+$m_{\text{seed}}$ & \texttt{seed\_mass} & $0.05$ & Default seed biomass & mass \\
+$K_{\text{bio}}$ & \texttt{K\_biomass} & $1.5$ & Local biomass carrying capacity & mass $\text{cell}^{-1}$ \\
+$I_{\text{rate}}$ & \texttt{soil\_input\_rate} & $0.2$ & Inorganic nutrient inflow rate & mass $\text{cell}^{-1} \text{step}^{-1}$ \\
+$\sigma_{\text{drift}}$ & \texttt{input\_drift\_scale} & $0.08$ & Inflow ratio drift std dev & dimensionless \\
+$\sigma_{\text{thresh}}$ & \texttt{sigma\_threshold} & $3.0$ & Mahalanobis niche fitness threshold & dimensionless \\
+$T_{\text{cat}}$ & \texttt{catastrophe\_interval} & $200$ & Catastrophe event interval & timesteps \\
+$d_{\text{cat}}$ & \texttt{catastrophe\_mortality} & $0.4$ & Catastrophe mortality multiplier & dimensionless \\
+$p_{\text{dist}}$ & \texttt{p\_disturbance} & $0.01$ & Patch disturbance probability & $\text{step}^{-1}$ \\
+$R_{\text{dist}}$ & \texttt{disturbance\_radius} & $8$ & Patch disturbance radius & cells \\
+$S_{\text{dist}}$ & \texttt{disturbance\_strength} & $0.7$ & Soil depletion fraction & dimensionless \\
+$\sigma_{\text{demo}}$ & \texttt{demo\_noise\_std} & $0.003$ & Demographic biomass noise std dev & mass \\
+$\rho_{\text{env}}$ & \texttt{env\_field\_persistence} & $0.85$ & Environmental field persistence & dimensionless \\
+$\rho_{\text{shock}}$ & \texttt{shock\_field\_persistence} & $0.85$ & Shock field persistence & dimensionless \\
+$T_{\text{mean}}$ & \texttt{temperature\_mean} & $0.5$ & Mean global temperature & temperature units \\
+$A_T$ & \texttt{temperature\_amplitude} & $0.3$ & Temperature sine amplitude & temperature units \\
+$P_T$ & \texttt{temperature\_period} & $100.0$ & Temperature period & timesteps \\
+$\beta_g$ & \texttt{temperature\_growth\_strength} & $0.5$ & Growth temperature sensitivity & dimensionless \\
+$\beta_r$ & \texttt{temperature\_respiration\_strength} & $0.3$ & Respiration temperature sensitivity & dimensionless \\
+$\beta_m$ & \texttt{temperature\_mineralization\_strength} & $0.4$ & Mineralization temp sensitivity & dimensionless \\
+\bottomrule
+\end{longtable}
+
+\begin{longtable}{lllp{4cm}lp{2.5cm}}
+\caption{Complete Specification of Primary State Variables.} \label{tab:state_variables} \\
+\toprule
+\textbf{Symbol} & \textbf{Code Variable} & \textbf{Type} & \textbf{Description} & \textbf{Units} & \textbf{Domain} \\
+\midrule
+\endhead
+$y_i$ & \texttt{agents[:, 0]} & Agent & $y$-coordinate & cells & $[0, H)$ \\
+$x_i$ & \texttt{agents[:, 1]} & Agent & $x$-coordinate & cells & $[0, W)$ \\
+$s_i$ & \texttt{agents[:, 2]} & Agent & Species identity index & ID & $\{0, \dots, N_{\text{spp}}-1\}$ \\
+$m_i$ & \texttt{agents[:, 3]} & Agent & Individual biomass & mass & $[0, \infty)$ \\
+$\boldsymbol{q}_i$ & \texttt{agents[:, 4:15]} & Agent & Elementome ($N_{\text{org}}$) & fraction & $[0, 1]^{N_{\text{org}}}$ \\
+$\alpha_i$ & \texttt{agents[:, 15]} & Agent & Viability status indicator & binary & $\{0.0, 1.0\}$ \\
+$\tau_i$ & \texttt{agents[:, 16]} & Agent & Individual agent age & timesteps & $[0, \infty)$ \\
+$I_{y,x,k}$ & \texttt{soil[:, :, 0:10]} & Soil Grid & Inorganic nutrient pool & mass $\text{cell}^{-1}$ & $[0, \infty)$ \\
+$O_{y,x,k}$ & \texttt{soil[:, :, 10:20]} & Soil Grid & Organic nutrient pool & mass $\text{cell}^{-1}$ & $[0, \infty)$ \\
+$E_{y,x}$ & \texttt{env\_field} & Env Field & Persistent environmental noise & dimensionless & $[0, 1]$ \\
+$S_{y,x}$ & \texttt{shock\_field} & Env Field & Persistent shock noise & dimensionless & $[0, 1]$ \\
+$T$ & \texttt{temperature} & Global Env & Global thermal state & dimensionless & $[0, 1]$ \\
+\bottomrule
+\end{longtable}
+
+\section{Outputs and Observations}
+The model computes and logs summary observation metrics:
+\begin{enumerate}
+    \item \textbf{Species Biomass Grid:} $B_{y,x,s}(t) = \sum_{i: (y_i,x_i)=(y,x), s_i=s} \alpha_i m_i$.
+    \item \textbf{Total Ecosystem Elemental Pools:} $P_e(t) = \sum_{i: \alpha_i=1} m_i q_{i, e}$.
+    \item \textbf{Elemental Dissimilarity Indices:} Mahalanobis distance-based diversity metrics computed across agents (\texttt{get\_agent\_elemental\_dissimilarity\_index\_tf}) and across species weighted by biomass (\texttt{get\_species\_elemental\_dissimilarity\_index\_tf}):
+    \begin{equation}
+    \text{EDm} = \frac{1}{E} \sum_{i, j} D_M(\boldsymbol{q}_i, \boldsymbol{q}_j) \cdot \min(p_i, p_j)
+    \end{equation}
+\end{enumerate}
+
+\section{Reproducibility}
+\begin{itemize}
+    \item \textbf{Programming Language \& Libraries:} Python 3.x, TensorFlow 2.x, NumPy.
+    \item \textbf{Execution Paradigm:} Dynamic TensorFlow graph execution via \texttt{@tf.function} vectorized tensor operations.
+    \item \textbf{Seed Handling:} Pseudorandom generation relies on TensorFlow/NumPy global state; explicit random seed initialization is recommended prior to simulation runs.
+\end{itemize}
+
+\section{Code-to-Mathematics Traceability}
+
+\begin{longtable}{lp{4.5cm}p{5.5cm}l}
+\caption{Code-to-Mathematics Traceability Matrix.} \label{tab:traceability} \\
+\toprule
+\textbf{Model Component} & \textbf{Mathematical Symbol / Equation} & \textbf{TensorFlow Code Location / Method} & \textbf{Line Reference} \\
+\midrule
+\endhead
+Soil Diffusion & $I^{\text{diff}}_{y,x,k} = \text{Conv2D}(I, K)$ & \texttt{tf.nn.depthwise\_conv2d(inorg\_padded, ...)} & \texttt{step()} \\
+Drifted Inflow & $\boldsymbol{r}' = \max(0.001, \boldsymbol{r}^{\text{base}} + \boldsymbol{\eta})$ & \texttt{input\_ratio\_drifted = tf.maximum(...)} & \texttt{step()} \\
+Environmental Fields & $\mathbf{E}' = \rho \mathbf{E} + (1-\rho) \mathbf{Z}_{\text{smooth}}$ & \texttt{\_update\_spatial\_field()} & Method Definition \\
+Niche Fitness & $w_i = 1 - (d_M / \sigma_{\text{thresh}})^2$ & \texttt{\_compute\_niche\_fitness\_mahalanobis()} & Method Definition \\
+Michaelis-Menten Uptake & $U_{i,k} = U^{\text{des}}_{i,k} I / (I + K_m)$ & \texttt{uptake = desired\_soil * (available / (available + K\_m))} & \texttt{step()} \\
+Liebig Quota Constraint & $g_{i,e} = \max(0, 1 - Q_{\min}/Q_{i,e})$ & \texttt{g = tf.maximum(0.0, 1.0 - (MIN\_QUOTA / Q))} & \texttt{step()} \\
+Space Constraint & $f^{\text{space}} = \max(0, 1 - B / K_{\text{bio}})$ & \texttt{space\_f = tf.maximum(0.0, 1.0 - (loc\_bio / K\_biomass))} & \texttt{step()} \\
+Respiration & $M_i = m_i r_{\text{resp}} (1 + \beta_r (T_i - 0.5))$ & \texttt{maint = mass * respiration\_rate * temp\_resp\_factor} & \texttt{step()} \\
+Mineralization Flux & $\Phi^{\text{min}} = O^{\text{tot}} m_{\text{min}} F_m(T)$ & \texttt{flux = org\_tot * mineralization\_rate * temp\_mineral\_factor} & \texttt{step()} \\
+Dispersal Torus & $y_{\text{off}} = (y_i + \Delta y) \pmod H$ & \texttt{ny = (tf.cast(p\_dat[:, I\_Y], int32) + dy) \% self.H} & \texttt{step()} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Detailed Model Architecture and Visual Execution Workflow}
+
+The structural and dynamical organization of the \texttt{HybridEcosystem} simulation is formalised in Figure~\ref{fig:model_architecture}. The model operates as a multi-tier complex adaptive system that couples abiotic forcing, 2D spatial diffusion, individual-level elemental physiological updates, multi-tier disturbance regimes, and ecosystem-level elemental recycling.
+
+\begin{figure}[H]
+\centering
+% Insert TikZ Diagram Here
+\caption{\textbf{Comprehensive ODD 2020 Architectural Model Diagram of \texttt{HybridEcosystem}.} The diagram illustrates the five structural levels: Level 1 (External Forcing and Parameter Inputs), Level 2 (Abiotic Soil Grid and Spatial Fields), Level 3 (Individual Agent Buffer and State Vector), Level 4 (Sequential Process Submodels with governing equations [P1]--[P10]), and Level 5 (Emergent System States and Logged Outputs). Arrow styles specify causality, exogenous forcing, stochastic draws, state transitions, and closed feedback loops.}
+\label{fig:model_architecture}
+\end{figure}
+
+\subsubsection{Structural Hierarchy and Information Flow}
+The simulation execution within each discrete step $t \to t+1$ follows a strict hierarchical information flow across five structural levels:
+
+\begin{enumerate}
+    \item \textbf{Level 1 (Exogenous Forcing \& Traits):} External parameters, species stoichiometric niche centers $\boldsymbol{c}_s$, covariance matrices $\boldsymbol{\Sigma}_s$, sinusoidal global thermal regimes $T(t)$, and stochastic atmospheric drift vectors $\boldsymbol{\eta}(t)$ drive the simulation without feedback from internal system state.
+    
+    \item \textbf{Level 2 (Abiotic Soil Grid):} The abiotic state consists of a regular 2D lattice ($H \times W$) containing $N_{\text{soil}}$ inorganic pools $\mathbf{I}(t)$ and organic pools $\mathbf{O}(t)$, along with spatial fields for environmental noise $E_{y,x}$ and physical shocks $S_{y,x}$. Inorganic nutrients undergo spatial convolution diffusion:
+    \begin{equation}
+    I^{\text{diff}}_{y,x,k}(t) = \sum_{dy=-1}^{1} \sum_{dx=-1}^{1} K_{dy+1, dx+1} \cdot I_{y+dy, x+dx, k}(t)
+    \end{equation}
+    where $K$ is a normalized $3 \times 3$ Gaussian smoothing kernel.
+    
+    \item \textbf{Level 3 (Individual Agent Buffer):} The biotic component is represented by an agent buffer $\mathbf{A}(t)$ holding state vectors $\mathbf{a}_i(t) = (y_i, x_i, s_i, m_i, \boldsymbol{q}_i, \alpha_i, \tau_i)^T$ for every active organism $i$.
+    
+    \item \textbf{Level 4 (Sequential Submodels [P1]--[P10]):} State transitions occur via ten sequential algorithmic blocks:
+    \begin{itemize}
+        \item \textbf{[P1] Soil Diffusion and Inflow:} Updates inorganic soil pools via depthwise 2D spatial convolution and drifted atmospheric input.
+        \item \textbf{[P2] Environmental Field Autoregression:} Updates persistent noise field $E_{y,x}$ and shock field $S_{y,x}$ via spatial autoregressive smoothing, and evaluates local cell temperature $T_{y,x}(t) = \text{clip}(T(t) + \gamma_{\text{sp}}(E_{y,x} - 0.5), 0, 1)$.
+        \item \textbf{[P3] Localized Patch Disturbance:} Depletes inorganic nutrients within radius $R_{\text{dist}}$ around stochastic centers $(c_y, c_x)$ proportionally to $S_{\text{dist}} E_{y,x}$.
+        \item \textbf{[P4] Niche Fitness Evaluation:} Computes Mahalanobis distance $d_{M,i}$ between elementome $\boldsymbol{q}_i$ and species niche optimum $\boldsymbol{c}_{s_i}$:
+        \begin{equation}
+        w_i = \text{clip}\left(1.0 - \frac{(\boldsymbol{q}_i - \boldsymbol{c}_{s_i})^T \boldsymbol{\Sigma}_{s_i}^{-1} (\boldsymbol{q}_i - \boldsymbol{c}_{s_i})}{\sigma_{\text{thresh}}^2}, 0.0, 1.0\right)
+        \end{equation}
+        \item \textbf{[P5] Michaelis-Menten Resource Uptake:} Calculates nutrient uptake $U_{i,k}$ based on saturation kinetics with half-saturation constant $K_m = 0.1$:
+        \begin{equation}
+        U_{i,k} = U^{\text{des}}_{i,k} \cdot \frac{I^{\text{avail}}_{y_i, x_i, k}}{I^{\text{avail}}_{y_i, x_i, k} + K_m}
+        \end{equation}
+        \item \textbf{[P6] Quota and Space Limitation:} Bottlenecks growth using Liebig's Law of the Minimum across internal element quotas $Q_{i,e}$ ($g_i^{\text{lim}} = \min_e \max(0, 1 - Q_{\min}/Q_{i,e})$) and density-dependent spatial crowding ($f_i^{\text{space}} = \max(0, 1 - B_{y_i,x_i}/K_{\text{bio}})$).
+        \item \textbf{[P7] Realized Growth and Respiration:} Updates individual biomass $m_i'' = m_i + G_i^{\text{real}} - M_i + \xi_i$ with temperature-dependent respiration $M_i$ and additive demographic noise $\xi_i \sim \mathcal{N}(0, \sigma_{\text{demo}}^2)$.
+        \item \textbf{[P8] Multi-Tier Mortality Filtering:} Filters agent survival through sequential viability, periodic catastrophe, weak niche-dependent, and strong mass-dependent mortality filters.
+        \item \textbf{[P9] Turnover Recycling and Mineralization:} Recycles elemental losses $L_{i,e}$ into organic soil pools $O_{y,x,k}$, which undergo temperature-dependent mineralization to replenish inorganic pools:
+        \begin{equation}
+        \Phi^{\text{min}}_{y,x,k} = O^{\text{tot}}_{y,x,k} \cdot m_{\text{min}} \cdot \left(1 + \beta_m (T_{y,x} - 0.5)\right)
+        \end{equation}
+        \item \textbf{[P10] Dispersal and Establishment:} Disperses offspring seeds on a 2D torus ($y_{\text{off}} = (y_i + \Delta y) \pmod H, x_{\text{off}} = (x_i + \Delta x) \pmod W$) subject to density-dependent establishment probability $P^{\text{est}} = \max(0, 1 - B_{\text{off}}/K_{\text{bio}})$.
+    \end{itemize}
+    
+    \item \textbf{Level 5 (Emergent System Outputs):} Computes aggregate community metrics including species spatial biomass grids $B_{y,x,s}(t)$, global elemental pools $P_e(t)$, and Mahalanobis elemental dissimilarity index $\text{EDm}$.
+\end{enumerate}
+
+\subsubsection{Causal Feedback Dynamics}
+The architectural diagram explicitly highlights three primary closed feedback loops that govern long-term community dynamics:
+
+\begin{enumerate}
+    \item \textbf{Resource Depletion Loop (Negative Feedback):} Active uptake by dense agent clusters reduces local inorganic nutrient availability $I^{\text{avail}}_{y,x,k}$, which suppresses subsequent uptake $U_{i,k}$ via Michaelis-Menten saturation, stabilizing local biomass accumulation.
+    
+    \item \textbf{Nutrient Recycling Loop (Positive/Balancing Feedback):} Agent turnover and mortality transfer elemental mass to organic pools $O_{y,x,k}$. Thermal mineralization converts this organic matter back into inorganic nutrients $I_{y,x,k}$, creating a localized nutrient feedback loop that sustains productivity in established patches.
+    
+    \item \textbf{Biomass Crowding Loop (Negative Feedback):} High local biomass density $B_{y,x}$ directly restricts individual growth via $f_i^{\text{space}}$ and reduces seedling establishment success via $P^{\text{est}}$, preventing unbounded local population growth and promoting spatial self-organization.
+\end{enumerate}
+
+
+
+\end{document}

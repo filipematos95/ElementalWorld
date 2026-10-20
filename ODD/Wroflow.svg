@@ -1,0 +1,332 @@
+<svg viewBox="0 0 1600 900" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" id="hybrid_ecosystem_workflow">
+  <defs>
+    <!-- Arrowhead Markers -->
+    <marker id="arrow-slate" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#475569" />
+    </marker>
+    <marker id="arrow-indigo" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#4338CA" />
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#0F766E" />
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#0284C7" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#166534" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#6D28D9" />
+    </marker>
+    <marker id="arrow-rose" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#BE185D" />
+    </marker>
+    <marker id="arrow-loop" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#0F172A" />
+    </marker>
+
+    <!-- Subtle Container Shadow -->
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#FFFFFF"/>
+
+  <!-- ================= HEADER ================= -->
+  <g id="figure_header">
+    <text x="40" y="42" font-family="Inter, Helvetica, Arial, sans-serif" font-size="22" font-weight="800" fill="#0F172A">HYBRIDECOSYSTEM: SIMULATION WORKFLOW ARCHITECTURE</text>
+    <text x="40" y="62" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#64748B">Spatially explicit, agent-based eco-evolutionary model with multi-elemental stoichiometric regulation</text>
+    <line x1="40" y1="72" x2="1560" y2="72" stroke="#E2E8F0" stroke-width="1.5"/>
+  </g>
+
+  <!-- ================= COLUMN 1: SETUP & INITIALIZATION ================= -->
+  <g id="section_inputs_and_init" filter="url(#shadow)">
+    <!-- Section Box 1: Inputs -->
+    <g id="box_inputs">
+      <rect x="40" y="90" width="380" height="175" rx="8" fill="#EEF2FF" stroke="#6366F1" stroke-width="1.5"/>
+      <rect x="52" y="102" width="115" height="20" rx="4" fill="#4338CA"/>
+      <text x="110" y="116" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">MODEL INPUTS</text>
+      <text x="52" y="140" font-family="Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#1E1B4B">Parameters &amp; Trait Setup</text>
+
+      <text x="52" y="162" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#312E81">• Lattice Size (H × W) &amp; Max Agent Buffer</text>
+      <text x="52" y="180" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#312E81">• Species Niche Centers &amp; Covariances</text>
+      <text x="52" y="198" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#312E81">• Physiological Rates (Growth, Respiration)</text>
+      <text x="52" y="216" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#312E81">• Thermal Sine Forcing &amp; Disturbance Regimes</text>
+      <text x="52" y="234" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#312E81">• Seed Mass, Dispersal Scaling &amp; Costs</text>
+    </g>
+
+    <!-- Arrow Inputs -> Init -->
+    <path d="M 230 265 L 230 293" stroke="#4338CA" stroke-width="2" marker-end="url(#arrow-indigo)"/>
+
+    <!-- Section Box 2: Initialization -->
+    <g id="box_initialization">
+      <rect x="40" y="295" width="380" height="175" rx="8" fill="#F0FDFA" stroke="#14B8A6" stroke-width="1.5"/>
+      <rect x="52" y="307" width="125" height="20" rx="4" fill="#0F766E"/>
+      <text x="114" y="321" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">INITIALIZATION</text>
+      <text x="52" y="345" font-family="Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#042F2E">Ecosystem State Setup</text>
+
+      <text x="52" y="367" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#115E59">• Build Soil Grid (Inorganic Ratios + Noise)</text>
+      <text x="52" y="385" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#115E59">• Set Initial Organic Soil Pools to Zero</text>
+      <text x="52" y="403" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#115E59">• Initialize Spatial Noise &amp; Shock Fields</text>
+      <text x="52" y="421" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#115E59">• Allocate Vectorized Agent Buffer</text>
+      <text x="52" y="439" font-family="Inter, Helvetica, Arial, sans-serif" font-size="12" fill="#115E59">• Seed Initial Plant Population (add_initial_seeds)</text>
+    </g>
+
+    <!-- Arrow Init -> Timestep Loop Container -->
+    <path d="M 420 382.5 L 448 382.5" stroke="#0F766E" stroke-width="2.5" marker-end="url(#arrow-teal)"/>
+
+    <!-- Section Box 3: Spatial Structure Schematic -->
+    <g id="box_spatial_structure">
+      <rect x="40" y="500" width="380" height="355" rx="8" fill="#F8FAFC" stroke="#64748B" stroke-width="1.5"/>
+      <rect x="52" y="512" width="145" height="20" rx="4" fill="#334155"/>
+      <text x="124" y="526" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">SPATIAL STRUCTURE</text>
+      <text x="52" y="550" font-family="Inter, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#0F172A">2D Toroidal Regular Lattice (H × W)</text>
+
+      <!-- Grid Visual Schematic -->
+      <g transform="translate(90, 570)">
+        <rect x="0" y="0" width="180" height="180" fill="#FFFFFF" stroke="#94A3B8" stroke-width="2" rx="4"/>
+        <!-- Grid Lines -->
+        <line x1="45" y1="0" x2="45" y2="180" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <line x1="90" y1="0" x2="90" y2="180" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <line x1="135" y1="0" x2="135" y2="180" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <line x1="0" y1="45" x2="180" y2="45" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <line x1="0" y1="90" x2="180" y2="90" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <line x1="0" y1="135" x2="180" y2="135" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="3,3"/>
+
+        <!-- Active Cell Highlight -->
+        <rect x="45" y="45" width="45" height="45" fill="#DCFCE7" stroke="#22C55E" stroke-width="2"/>
+        <circle cx="67.5" cy="67.5" r="10" fill="#16A34A" opacity="0.85"/>
+        <text x="67.5" y="71" font-family="Inter, Helvetica, Arial, sans-serif" font-size="9" font-weight="800" fill="#FFFFFF" text-anchor="middle">Plant</text>
+
+        <!-- Toroidal Wrap Arrows -->
+        <path d="M 180 90 C 210 90, 210 -10, 90 -10 C 90 -10, 90 0, 90 0" fill="none" stroke="#0284C7" stroke-width="1.5" stroke-dasharray="2,2" marker-end="url(#arrow-blue)"/>
+        <path d="M 90 180 C 90 210, -10 210, -10 90 C -10 90, 0 90, 0 90" fill="none" stroke="#0284C7" stroke-width="1.5" stroke-dasharray="2,2" marker-end="url(#arrow-blue)"/>
+      </g>
+
+      <text x="52" y="780" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#334155">• Periodic Boundary Conditions (Wrap-around)</text>
+      <text x="52" y="798" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#475569">• Cell (y, x): Inorganic &amp; Organic Soil Pools</text>
+      <text x="52" y="816" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#475569">• Agents located at continuous grid coordinates</text>
+      <text x="52" y="834" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#475569">• 3×3 Depthwise convolution for soil diffusion</text>
+    </g>
+  </g>
+
+  <!-- ================= COLUMN 2: SIMULATION TIMESTEP LOOP ================= -->
+  <g id="section_simulation_loop">
+    <!-- Big Loop Container Box -->
+    <rect x="450" y="90" width="730" height="765" rx="12" fill="#F8FAFC" stroke="#334155" stroke-width="2.5" stroke-dasharray="8,6" filter="url(#shadow)"/>
+
+    <!-- Container Header Banner -->
+    <rect x="470" y="104" width="400" height="32" rx="6" fill="#1E293B"/>
+    <text x="670" y="125" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="800" fill="#FFFFFF" text-anchor="middle">SIMULATION TIMESTEP LOOP (Step t → t + 1)</text>
+
+    <!-- LEFT SUB-COLUMN: ABIOTIC & PHYSIOLOGY (1 -> 5) -->
+
+    <!-- Step 1: Soil Diffusion & Inflow -->
+    <g id="step_1">
+      <rect x="470" y="150" width="335" height="85" rx="6" fill="#E0F2FE" stroke="#0284C7" stroke-width="1.5"/>
+      <rect x="480" y="158" width="60" height="18" rx="3" fill="#0284C7"/>
+      <text x="510" y="171" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 1</text>
+      <text x="548" y="172" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#075985">Soil Diffusion &amp; Atmospheric Inflow</text>
+      <text x="480" y="193" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#0369A1">• 2D Depthwise convolution on inorganic soil pools</text>
+      <text x="480" y="210" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#0369A1">• External nutrient inflow with drifting ratios</text>
+      <!-- Stochastic Badge -->
+      <rect x="710" y="208" width="88" height="20" rx="10" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1"/>
+      <text x="754" y="221" font-family="Inter, Helvetica, Arial, sans-serif" font-size="9" font-weight="700" fill="#92400E" text-anchor="middle">🎲 Ratio Shocks</text>
+    </g>
+
+    <!-- Arrow Step 1 -> 2 -->
+    <path d="M 637.5 235 L 637.5 258" stroke="#0284C7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+    <!-- Step 2: Spatial Fields & Climate -->
+    <g id="step_2">
+      <rect x="470" y="260" width="335" height="85" rx="6" fill="#E0F2FE" stroke="#0284C7" stroke-width="1.5"/>
+      <rect x="480" y="268" width="60" height="18" rx="3" fill="#0284C7"/>
+      <text x="510" y="281" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 2</text>
+      <text x="548" y="282" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#075985">Spatial Fields &amp; Thermal Forcing</text>
+      <text x="480" y="303" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#0369A1">• Smooth autoregressive noise &amp; shock fields</text>
+      <text x="480" y="320" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#0369A1">• Update global temperature (sinusoidal regime)</text>
+      <text x="480" y="337" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#0369A1">• Map local cell temperature with spatial variance</text>
+    </g>
+
+    <!-- Arrow Step 2 -> 3 -->
+    <path d="M 637.5 345 L 637.5 368" stroke="#0284C7" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+    <!-- Step 3: Stochastic Patch Disturbance -->
+    <g id="step_3">
+      <rect x="470" y="370" width="335" height="85" rx="6" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1.5"/>
+      <rect x="480" y="378" width="60" height="18" rx="3" fill="#D97706"/>
+      <text x="510" y="391" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 3</text>
+      <text x="548" y="392" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#78350F">Local Patch Disturbance</text>
+      <text x="480" y="413" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#92400E">• Stochastic trigger for patch disturbance event</text>
+      <text x="480" y="430" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#92400E">• Random spatial center &amp; radius depletion</text>
+      <!-- Stochastic Badge -->
+      <rect x="710" y="428" width="88" height="20" rx="10" fill="#FDE68A" stroke="#D97706" stroke-width="1"/>
+      <text x="754" y="441" font-family="Inter, Helvetica, Arial, sans-serif" font-size="9" font-weight="700" fill="#78350F" text-anchor="middle">⚡ Random Patch</text>
+    </g>
+
+    <!-- Arrow Step 3 -> 4 -->
+    <path d="M 637.5 455 L 637.5 478" stroke="#166534" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+    <!-- Step 4: Biological Niche Fitness -->
+    <g id="step_4">
+      <rect x="470" y="480" width="335" height="85" rx="6" fill="#DCFCE7" stroke="#22C55E" stroke-width="1.5"/>
+      <rect x="480" y="488" width="60" height="18" rx="3" fill="#16A34A"/>
+      <text x="510" y="501" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 4</text>
+      <text x="548" y="502" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#14532D">Biological Niche Fitness</text>
+      <text x="480" y="523" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Calculate agent elementome ratio vector</text>
+      <text x="480" y="540" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Evaluate Mahalanobis distance to species center</text>
+      <text x="480" y="557" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Determine stoichiometric fitness score</text>
+    </g>
+
+    <!-- Arrow Step 4 -> 5 -->
+    <path d="M 637.5 565 L 637.5 588" stroke="#166534" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+    <!-- Step 5: Nutrient Uptake & Quota Limits -->
+    <g id="step_5">
+      <rect x="470" y="590" width="335" height="85" rx="6" fill="#DCFCE7" stroke="#22C55E" stroke-width="1.5"/>
+      <rect x="480" y="598" width="60" height="18" rx="3" fill="#16A34A"/>
+      <text x="510" y="611" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 5</text>
+      <text x="548" y="612" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#14532D">Nutrient Uptake &amp; Quota Limits</text>
+      <text x="480" y="633" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Internal Carbon self-supply uptake</text>
+      <text x="480" y="650" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Michaelis-Menten inorganic soil uptake</text>
+      <text x="480" y="667" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Apply Liebig's quota &amp; local biomass space limits</text>
+    </g>
+
+    <!-- BRIDGE ARROW: Step 5 (Bottom-Left) -> Step 6 (Bottom-Right) -->
+    <path d="M 805 632.5 L 823 632.5" stroke="#166534" stroke-width="2.5" marker-end="url(#arrow-green)"/>
+
+    <!-- RIGHT SUB-COLUMN: GROWTH, MORTALITY & RECYCLING (6 -> 10) -->
+
+    <!-- Step 6: Growth & Maintenance -->
+    <g id="step_6">
+      <rect x="825" y="590" width="335" height="85" rx="6" fill="#DCFCE7" stroke="#22C55E" stroke-width="1.5"/>
+      <rect x="835" y="598" width="60" height="18" rx="3" fill="#16A34A"/>
+      <text x="865" y="611" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 6</text>
+      <text x="903" y="612" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#14532D">Realized Growth &amp; Respiration</text>
+      <text x="835" y="633" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Add realized biomass growth to plant pool</text>
+      <text x="835" y="650" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#166534">• Subtract temp-dependent maintenance respiration</text>
+      <!-- Stochastic Badge -->
+      <rect x="1065" y="648" width="88" height="20" rx="10" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1"/>
+      <text x="1109" y="661" font-family="Inter, Helvetica, Arial, sans-serif" font-size="9" font-weight="700" fill="#92400E" text-anchor="middle">🎲 Demo Noise</text>
+    </g>
+
+    <!-- Arrow Step 6 -> 7 (Flowing Upwards) -->
+    <path d="M 992.5 590 L 992.5 567" stroke="#166534" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+    <!-- Step 7: Multi-Tier Mortality Filters -->
+    <g id="step_7">
+      <rect x="825" y="480" width="335" height="85" rx="6" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1.5"/>
+      <rect x="835" y="488" width="60" height="18" rx="3" fill="#D97706"/>
+      <text x="865" y="501" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 7</text>
+      <text x="903" y="502" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#78350F">Multi-Tier Mortality Filters</text>
+      <text x="835" y="523" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#92400E">• Minimum biomass viability threshold check</text>
+      <text x="835" y="540" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#92400E">• Periodic global catastrophe mortality shock</text>
+      <text x="835" y="557" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#92400E">• Weak (niche) &amp; strong (mass) disturbance filters</text>
+    </g>
+
+    <!-- Arrow Step 7 -> 8 -->
+    <path d="M 992.5 480 L 992.5 457" stroke="#6D28D9" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+    <!-- Step 8: Soil Recycling & Mineralization -->
+    <g id="step_8">
+      <rect x="825" y="370" width="335" height="85" rx="6" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="1.5"/>
+      <rect x="835" y="378" width="60" height="18" rx="3" fill="#7C3AED"/>
+      <text x="865" y="391" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 8</text>
+      <text x="903" y="392" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#4C1D95">Soil Recycling &amp; Mineralization</text>
+      <text x="835" y="413" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#5B21B6">• Recycle dead plants &amp; turnover to organic soil</text>
+      <text x="835" y="430" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#5B21B6">• Temp-dependent organic pool mineralization</text>
+      <text x="835" y="447" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#5B21B6">• Replenish local inorganic soil nutrient pools</text>
+    </g>
+
+    <!-- Arrow Step 8 -> 9 -->
+    <path d="M 992.5 370 L 992.5 347" stroke="#6D28D9" stroke-width="2" marker-end="url(#arrow-purple)"/>
+
+    <!-- Step 9: Reproduction & Dispersal -->
+    <g id="step_9">
+      <rect x="825" y="260" width="335" height="85" rx="6" fill="#F5F3FF" stroke="#8B5CF6" stroke-width="1.5"/>
+      <rect x="835" y="268" width="60" height="18" rx="3" fill="#7C3AED"/>
+      <text x="865" y="281" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 9</text>
+      <text x="903" y="282" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#4C1D95">Reproduction &amp; Seed Dispersal</text>
+      <text x="835" y="303" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#5B21B6">• Fertile agents pay seed biomass cost</text>
+      <text x="835" y="320" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#5B21B6">• Disperse offspring on 2D torus (range Rs)</text>
+      <text x="835" y="337" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#5B21B6">• Density-dependent seedling establishment</text>
+    </g>
+
+    <!-- Arrow Step 9 -> Step 10 -->
+    <path d="M 992.5 260 L 992.5 237" stroke="#475569" stroke-width="2" marker-end="url(#arrow-slate)"/>
+
+    <!-- Step 10: Advance Timestep Check -->
+    <g id="step_10">
+      <rect x="825" y="150" width="335" height="85" rx="6" fill="#F1F5F9" stroke="#475569" stroke-width="1.5"/>
+      <rect x="835" y="158" width="65" height="18" rx="3" fill="#334155"/>
+      <text x="867" y="171" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">STEP 10</text>
+      <text x="908" y="172" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0F172A">Advance Timestep (t ← t + 1)</text>
+      <text x="835" y="193" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#334155">• Increment global simulation step counter</text>
+      <text x="835" y="210" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" stroke-width="0" fill="#334155">• Log mortality fitness &amp; nutrient deficits</text>
+    </g>
+
+    <!-- REPETITION / LOOP-BACK PIPE ARROW -->
+    <!-- From Step 10 (Left Side) back to Step 1 (Right Side) -->
+    <path d="M 825 192.5 L 812 192.5" stroke="#0F172A" stroke-width="2.5" marker-end="url(#arrow-loop)"/>
+    <!-- Loop Label Badge -->
+    <rect x="795" y="104" width="140" height="22" rx="11" fill="#0F172A"/>
+    <text x="865" y="119" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">↺ Loop If t &lt; T_max</text>
+
+  </g>
+
+  <!-- Arrow Step 10 (Right Side) -> Section Outputs -->
+  <path d="M 1160 192.5 L 1208 192.5" stroke="#0F172A" stroke-width="2.5" marker-end="url(#arrow-rose)"/>
+  <text x="1185" y="182" font-family="Inter, Helvetica, Arial, sans-serif" font-size="9" font-weight="800" fill="#9D174D" text-anchor="middle">t = T_max</text>
+
+  <!-- ================= COLUMN 3: SIMULATION OUTPUTS ================= -->
+  <g id="section_outputs" filter="url(#shadow)">
+    <rect x="1210" y="90" width="350" height="765" rx="8" fill="#FCE7F3" stroke="#EC4899" stroke-width="1.5"/>
+    <rect x="1225" y="104" width="135" height="20" rx="4" fill="#9D174D"/>
+    <text x="1292" y="118" font-family="Inter, Helvetica, Arial, sans-serif" font-size="10" font-weight="700" fill="#FFFFFF" text-anchor="middle">MODEL OUTPUTS</text>
+    <text x="1225" y="142" font-family="Inter, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#831843">Logged Simulation Results</text>
+
+    <!-- Output Card 1: Biomass Grids -->
+    <g id="out_card_1">
+      <rect x="1225" y="160" width="320" height="145" rx="6" fill="#FFFFFF" stroke="#F472B6" stroke-width="1"/>
+      <text x="1237" y="182" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#9D174D">1. Spatial Biomass Grids</text>
+      <text x="1237" y="204" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Total plant biomass grid (H × W)</text>
+      <text x="1237" y="222" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Species-specific spatial biomass maps</text>
+      <text x="1237" y="240" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Spatial community self-organization</text>
+      <text x="1237" y="258" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Evaluated via get_biomass_grid()</text>
+    </g>
+
+    <!-- Output Card 2: Elemental Pools -->
+    <g id="out_card_2">
+      <rect x="1225" y="325" width="320" height="145" rx="6" fill="#FFFFFF" stroke="#F472B6" stroke-width="1"/>
+      <text x="1237" y="347" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#9D174D">2. Ecosystem Elemental Pools</text>
+      <text x="1237" y="369" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Total plant elemental stocks (N_org)</text>
+      <text x="1237" y="387" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Inorganic soil nutrient pools (I_y,x,k)</text>
+      <text x="1237" y="405" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Organic soil nutrient pools (O_y,x,k)</text>
+      <text x="1237" y="423" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Evaluated via get_element_pools()</text>
+    </g>
+
+    <!-- Output Card 3: Stoichiometric Diversity -->
+    <g id="out_card_3">
+      <rect x="1225" y="490" width="320" height="145" rx="6" fill="#FFFFFF" stroke="#F472B6" stroke-width="1"/>
+      <text x="1237" y="512" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#9D174D">3. Stoichiometric Dissimilarity</text>
+      <text x="1237" y="534" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Agent-level elemental dissimilarity index</text>
+      <text x="1237" y="552" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Species-weighted Mahalanobis distance</text>
+      <text x="1237" y="570" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Trait diversity &amp; niche differentiation</text>
+      <text x="1237" y="588" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Evaluated via get_species_EDm_tf()</text>
+    </g>
+
+    <!-- Output Card 4: Mortality & Deficit Logs -->
+    <g id="out_card_4">
+      <rect x="1225" y="655" width="320" height="180" rx="6" fill="#FFFFFF" stroke="#F472B6" stroke-width="1"/>
+      <text x="1237" y="677" font-family="Inter, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#9D174D">4. Mortality &amp; Deficit Metrics</text>
+      <text x="1237" y="699" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Fitness logs of deceased organisms</text>
+      <text x="1237" y="717" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Species-level nutrient deficit vectors</text>
+      <text x="1237" y="735" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Population mean agent age trajectories</text>
+      <text x="1237" y="753" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Evaluated via get_species_mean_dead_fitness()</text>
+      <text x="1237" y="771" font-family="Inter, Helvetica, Arial, sans-serif" font-size="11" fill="#831843">• Evaluated via get_nutrient_deficit()</text>
+    </g>
+  </g>
+</svg>
