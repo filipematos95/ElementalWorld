@@ -1,0 +1,169 @@
+\documentclass[tikz,border=10pt]{standalone}
+\usepackage{amsmath,amssymb}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, fit, backgrounds, calc, chains, patterns}
+
+\begin{document}
+\begin{tikzpicture}[
+    node distance=1.3cm and 1.5cm,
+    font=\sffamily\small,
+    % Box Styles
+    inputbox/.style={rectangle, draw=purple!80!black, fill=purple!5, thick, rounded corners=3pt, align=center, inner sep=6pt},
+    envbox/.style={rectangle, draw=blue!80!black, fill=blue!5, thick, rounded corners=3pt, align=center, inner sep=6pt},
+    entitybox/.style={rectangle, draw=green!60!black, fill=green!5, thick, rounded corners=3pt, align=center, inner sep=6pt},
+    procbox/.style={rectangle, draw=orange!90!black, fill=orange!8, thick, rounded corners=3pt, align=left, inner sep=6pt},
+    outbox/.style={rectangle, draw=red!80!black, fill=red!5, thick, rounded corners=3pt, align=center, inner sep=6pt},
+    spatialbox/.style={rectangle, draw=teal!80!black, fill=teal!5, thick, dashed, rounded corners=3pt, align=center, inner sep=6pt},
+    % Arrow Styles
+    detarrow/.style={-{-{Stealth[length=2.5mm]}}, solid, line width=1.1pt, color=black},
+    stocharrow/.style={-{-{Stealth[length=2.5mm]}}, dotted, line width=1.2pt, color=purple!80!black},
+    forcearrow/.style={-{-{Stealth[length=2.5mm]}}, dashed, line width=1.1pt, color=blue!80!black},
+    transarrow/.style={-{-{Stealth[length=3mm]}}, line width=1.8pt, color=green!50!black},
+    feedarrow/.style={-{-{Stealth[length=2.5mm]}}, double, line width=0.8pt, color=red!70!black}
+]
+
+% ==============================================================================
+% LEVEL 1: EXTERNAL INPUTS & PARAMETERS
+% ==============================================================================
+\node[inputbox] (params) {
+    \textbf{LEVEL 1: External Inputs \& Model Parameters}\\
+    \hrulefill\\
+    \begin{tabular}{ll}
+    Global Parameters: & $g_0, r_{\text{resp}}, \mu_{\text{turn}}, m_{\text{min}}, C_{\text{seed}}, K_{\text{bio}}, I_{\text{rate}}, \sigma_{\text{drift}}, \sigma_{\text{thresh}}, T_{\text{cat}}, d_{\text{cat}}, p_{\text{dist}}$ \\
+    Species Traits: & Niche Centers $\boldsymbol{c}_s$, Covariances $\boldsymbol{\Sigma}_s$, Seed Mass $m_{\text{seed},s}$, Range $R_s = R_{\text{scale}} m_{\text{seed},s}^\alpha$ \\
+    External Forcing: & Sinusoidal Temp $T(t) = T_{\text{mean}} + A_T \sin\left(\frac{2\pi(t+\phi)}{P}\right)$, Inflow Ratio Drift $\boldsymbol{\eta}(t) \sim \mathcal{N}(\boldsymbol{0}, \sigma_{\text{drift}}^2 \mathbf{I})$
+    \end{tabular}
+};
+
+% ==============================================================================
+% LEVEL 2: ENVIRONMENT & SOIL GRID
+% ==============================================================================
+\node[envbox, below=1.0cm of params] (environment) {
+    \textbf{LEVEL 2: Abiotic Environment \& Spatially Explicit Soil Grid ($H \times W$)}\\
+    \hrulefill\\
+    \begin{tabular}{ccc}
+    \textbf{Inorganic Soil Pools $\mathbf{I}(t)$} & \textbf{Organic Soil Pools $\mathbf{O}(t)$} & \textbf{Spatial Forcing Fields} \\
+    $I_{y,x,k} \ge 0, \quad k \in \{1,\dots,N_{\text{soil}}\}$ & $O_{y,x,k} \ge 0, \quad k \in \{1,\dots,N_{\text{soil}}\}$ & Persistent Noise $E_{y,x} \in [0,1]$, Shock Field $S_{y,x} \in [0,1]$ \\
+    Available Fraction: $I^{\text{avail}}_{y,x,k} = I_{y,x,k} \cdot a_{\text{avail},k}$ & Recycled Inputs: $F^{\text{fresh}}_{y,x,k}$ & Local Temp $T_{y,x} = \text{clip}\left(T(t) + \gamma(E_{y,x} - 0.5), 0, 1\right)$
+    \end{tabular}
+};
+
+% ==============================================================================
+% LEVEL 3: ECOLOGICAL ENTITIES & STATE VARIABLES
+% ==============================================================================
+\node[entitybox, below=1.0cm of environment] (entities) {
+    \textbf{LEVEL 3: Individual Agent Buffer $\mathbf{A}(t)$ ($M = \text{MAX\_AGENTS}$)}\\
+    \hrulefill\\
+    $\mathbf{a}_i(t) = \left( y_i, x_i, s_i, m_i, \boldsymbol{q}_i, \alpha_i, \tau_i \right)^T \quad \text{for } i \in \{1, \dots, N_{\text{agents}}\}$\\
+    \begin{tabular}{llll}
+    $(y_i, x_i) \in [0,H) \times [0,W)$ & : Spatial Position & $m_i \ge 0$ & : Individual Plant Biomass \\
+    $s_i \in \{0,\dots,N_{\text{spp}}-1\}$ & : Species Identity & $\boldsymbol{q}_i \in [0,1]^{N_{\text{org}}}$ & : Elementome Ratios ($\sum_e q_{i,e} = 1$) \\
+    $\alpha_i \in \{0, 1\}$ & : Alive Status Flag & $\tau_i \in \mathbb{R}_{\ge 0}$ & : Individual Age (steps)
+    \end{tabular}
+};
+
+% ==============================================================================
+% LEVEL 4: PROCESSES & UPDATING SUBMODELS
+% ==============================================================================
+\node[procbox, below left=1.2cm and -1.0cm of entities, text width=7.2cm] (p1_p4) {
+    \textbf{Processes 1--4: Physical \& Physiological Setup}\\
+    \hrulefill\\[2pt]
+    \textbf{[P1] Diffusion \& Inflow:}\\
+    $I^{\text{diff}} = \text{Conv2D}(\mathbf{I}, K), \quad I^{\text{new}} = I^{\text{diff}} + r^{\text{in}} I_{\text{rate}}$\\[3pt]
+    \textbf{[P2] Env Field Autoregression:}\\
+    $E_{y,x}(t) = \text{Norm}\left(\rho E_{y,x}(t-1) + (1-\rho) Z_{\text{smooth}}\right)$\\[3pt]
+    \textbf{[P3] Patch Disturbance:}\\
+    $I^{\text{dist}}_{y,x,k} = I^{\text{new}}_{y,x,k} (1 - S_{\text{dist}} E_{y,x}) \quad \text{for } d(y,x; c_y,c_x) < R_{\text{dist}}$\\[3pt]
+    \textbf{[P4] Niche Fitness (Mahalanobis):}\\
+    $w_i = \text{clip}\left(1 - \frac{(\boldsymbol{q}_i - \boldsymbol{c}_{s_i})^T \boldsymbol{\Sigma}_{s_i}^{-1} (\boldsymbol{q}_i - \boldsymbol{c}_{s_i})}{\sigma_{\text{thresh}}^2}, 0, 1\right)$
+};
+
+\node[procbox, right=0.8cm of p1_p4, text width=8.0cm] (p5_p7) {
+    \textbf{Processes 5--7: Uptake, Limitation \& Growth}\\
+    \hrulefill\\[2pt]
+    \textbf{[P5] Michaelis-Menten Nutrient Uptake:}\\
+    $U_{i,k} = U^{\text{des}}_{i,k} \cdot \frac{I^{\text{avail}}_{y_i, x_i, k}}{I^{\text{avail}}_{y_i, x_i, k} + K_m}, \quad K_m = 0.1$\\[3pt]
+    \textbf{[P6] Liebig Quota \& Space Constraints:}\\
+    $g_i^{\text{lim}} = \min_{e} \left(\max\left(0, 1 - \frac{Q_{\min}}{Q_{i,e}}\right)\right), \quad f_i^{\text{space}} = \max\left(0, 1 - \frac{B_{y_i,x_i}}{K_{\text{bio}}}\right)$\\[3pt]
+    \textbf{[P7] Realized Growth \& Respiration:}\\
+    $G_i^{\text{real}} = \left(U_{i,\text{C}} + \sum_k U_{i,k}\right) g_i^{\text{lim}} f_i^{\text{space}}$\\
+    $m_i'' = m_i + G_i^{\text{real}} - m_i r_{\text{resp}} (1 + \beta_r(T_{y_i,x_i}-0.5)) + \xi_i, \;\; \xi_i \sim \mathcal{N}(0, \sigma_{\text{demo}}^2)$
+};
+
+\node[procbox, below=0.6cm of p1_p4, text width=7.2cm] (p8) {
+    \textbf{Process 8: Multi-Tier Mortality Filters}\\
+    \hrulefill\\[2pt]
+    Viability: $\alpha_i^{(0)} = \mathbb{I}(m_i'' > 0.01)$\\[2pt]
+    Catastrophe: $P_i^{\text{cat}} = d_{\text{cat}} S_{y_i,x_i} \quad \text{if } t \pmod{T_{\text{cat}}} == 0$\\[2pt]
+    Weak Disturbance: $P_i^{\text{weak}} = d_{\text{weak}} E_{y_i,x_i} (1 - w_i)^2$\\[2pt]
+    Strong Disturbance: $P_i^{\text{strong}} = d_{\text{strong}} S_{y_i,x_i} (\theta_i)^2, \quad \theta_i \in [0,1]$
+};
+
+\node[procbox, below=0.6cm of p5_p7, text width=8.0cm] (p9_p10) {
+    \textbf{Processes 9--10: Recycling \& Reproduction}\\
+    \hrulefill\\[2pt]
+    \textbf{[P9] Turnover, Recycling \& Mineralization:}\\
+    $L_{i,e} = \left(m_i^{\text{dead}} + m_i^{\text{alive}} \mu_{\text{turn}}\right) Q_{i,e} \longrightarrow O_{y,x,k}^{\text{tot}}$\\
+    $\Phi^{\text{min}}_{y,x,k} = O^{\text{tot}}_{y,x,k} m_{\text{min}} \left(1 + \beta_m(T_{y,x}-0.5)\right) \longrightarrow I_{y,x,k}(t+1)$\\[3pt]
+    \textbf{[P10] Dispersal \& Toroidal Establishment:}\\
+    $y_{\text{off}} = (y_i + \Delta y) \pmod H, \quad x_{\text{off}} = (x_i + \Delta x) \pmod W$\\
+    $P^{\text{est}} = \max\left(0, 1 - \frac{B_{y_{\text{off}}, x_{\text{off}}}}{K_{\text{bio}}}\right) \quad \text{with } P^{\text{seed}} = 0.1 w_i$
+};
+
+% ==============================================================================
+% SPATIAL SCHEMATIC & OUTPUTS
+% ==============================================================================
+\node[spatialbox, right=1.0cm of p5_p7, text width=4.5cm] (spatial_schema) {
+    \textbf{Toroidal Geometry ($H \times W$)}\\
+    \hrulefill\\[3pt]
+    \begin{tikzpicture}[scale=0.4]
+    \draw[step=1.0,gray!50,thin] (0,0) grid (3,3);
+    \draw[thick,teal] (0,0) rectangle (3,3);
+    \node at (1.5,1.5) {\footnotesize Cell $(y,x)$};
+    \draw[<->,thick,blue] (3.2,1.5) -- (4.0,1.5) node[right,black] {\tiny Torus Wrap};
+    \end{tikzpicture}\\[3pt]
+    $\mathcal{N}_{y,x} = \{(y+dy, x+dx) \pmod{(H,W)}\}$\\
+    Periodic Boundary Conditions
+};
+
+\node[outbox, below=0.8cm of p9_p10, xshift=-4.0cm, text width=12.0cm] (outputs) {
+    \textbf{LEVEL 5: Emergent System State \& Logged Outputs}\\
+    \hrulefill\\
+    \begin{tabular}{lll}
+    \textbf{Biomass Grid:} $B_{y,x,s}(t) = \sum_{i: s_i=s} \alpha_i m_i$ &
+    \textbf{Element Pools:} $P_e(t) = \sum_{i} m_i q_{i,e}$ &
+    \textbf{Dissimilarity:} $\text{EDm} = \frac{1}{E} \sum_{i,j} D_M(\boldsymbol{q}_i,\boldsymbol{q}_j) \min(p_i,p_j)$
+    \end{tabular}
+};
+
+% ==============================================================================
+% ARROWS & CAUSAL CONNECTIVITY
+% ==============================================================================
+\draw[forcearrow] (params) -- (environment);
+\draw[detarrow] (environment) -- node[right] {Soil Nutrients $I^{\text{avail}}$} (entities);
+\draw[transarrow] (entities) -- (p1_p4);
+\draw[detarrow] (p1_p4) -- (p5_p7);
+\draw[detarrow] (p5_p7) -- (p8);
+\draw[detarrow] (p8) -- (p9_p10);
+\draw[transarrow] (p9_p10) -- (outputs);
+\draw[stocharrow] (params.east) -- ++(1.5,0) |- (p1_p4.east);
+\draw[forcearrow] (spatial_schema) -- (p9_p10);
+
+% Feedbacks
+\draw[feedarrow] (p9_p10.west) -- ++(-1.0,0) |- node[near start, left, rotate=90] {\textbf{Mineralization Feedback} (+)} (environment.west);
+\draw[feedarrow] (p5_p7.north east) -- ++(0.5,0) |- node[near start, right, rotate=-90] {\textbf{Uptake Depletion} (-)} (environment.east);
+\draw[feedarrow] (p5_p7.south) -- ++(0,-0.3) -| node[below, pos=0.25] {\textbf{Density Crowding} ($K_{\text{bio}}$)} (entities.south east);
+
+% ==============================================================================
+% LEGEND
+% ==============================================================================
+\node[rectangle, draw=black, fill=white, thick, rounded corners=2pt, above right=0.2cm and -3.0cm of params] (legend) {
+    \textbf{Legend / Arrow Types:}\quad
+    \tikz\draw[detarrow] (0,0) -- (0.6,0); Deterministic\quad
+    \tikz\draw[stocharrow] (0,0) -- (0.6,0); Stochastic\quad
+    \tikz\draw[forcearrow] (0,0) -- (0.6,0); Exogenous Forcing\quad
+    \tikz\draw[transarrow] (0,0) -- (0.6,0); State Transition\quad
+    \tikz\draw[feedarrow] (0,0) -- (0.6,0); Feedback Loop
+};
+
+\end{tikzpicture}
+\end{document}

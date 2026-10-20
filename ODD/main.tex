@@ -1,0 +1,566 @@
+\begin{document}
+
+\section{ODD-2020 Protocol Description}
+
+\subsection{Theoretical and Empirical Background}
+
+The model integrates concepts from ecological stoichiometry, trait-based niche theory, ecosystem biogeochemistry, disturbance ecology, and spatial population dynamics. The central assumption is that organismal performance is jointly determined by internal elemental composition and external resource availability. Individuals are characterized by a multidimensional elemental phenotype (elementome), and species differ in their optimal elemental compositions and tolerance to deviations from these optima.
+
+Ecological stoichiometry provides the foundation for resource limitation. Growth depends on the balance among multiple chemical elements and is constrained when elemental requirements cannot be satisfied. Trait-based niche theory is incorporated by assuming that each species occupies a distinct region within stoichiometric trait space. Consequently, individual performance depends on the similarity between an individual's elementome and its species-specific stoichiometric optimum.
+
+Environmental conditions are spatially heterogeneous and temporally variable. Resource redistribution, stochastic environmental fluctuations, and disturbances generate continuously changing selective environments. Through nutrient uptake, litter production, mortality, and mineralization, organisms modify environmental nutrient pools, creating reciprocal feedbacks between ecological and biogeochemical processes.
+
+The model is intentionally generic and is not designed to represent a specific ecosystem. Instead, it investigates how ecosystem structure and functioning emerge from the interaction between stoichiometric constraints, environmental filtering, nutrient cycling, and demographic processes.
+
+\subsection{Purpose}
+
+The purpose of the model is to investigate how species-specific stoichiometric niches, nutrient availability, environmental variability, temperature forcing, and disturbance regimes interact to shape population dynamics, nutrient cycling, biodiversity, and ecosystem functioning.
+
+Particular emphasis is placed on understanding how biogeochemical feedbacks emerge from the coupling between nutrient acquisition, biomass growth, mortality, decomposition, and nutrient recycling.
+
+\subsection{Patterns and Objectives}
+
+The model is designed to generate and explore the emergence of:
+
+\begin{itemize}
+\item species abundance distributions,
+\item spatial biomass patterns,
+\item nutrient limitation dynamics,
+\item elemental diversity within and among species,
+\item demographic structure,
+\item nutrient cycling rates,
+\item ecosystem productivity,
+\item community-level stoichiometric composition.
+\end{itemize}
+
+No ecosystem-level patterns are imposed externally; all system-level properties emerge from lower-level interactions.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Entities, State Variables, and Scales}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Entities}
+
+The model contains two types of entities:
+
+\begin{enumerate}
+\item individual organisms,
+\item spatial grid cells.
+\end{enumerate}
+
+\subsection{Individual Organisms}
+
+Each individual $j$ is characterized by:
+
+\begin{itemize}
+\item spatial coordinates $(x_j,y_j)$,
+\item species identity $s_j$,
+\item biomass $m_j$,
+\item age $a_j$,
+\item survival status,
+\item elemental composition $\mathbf{x}_j$.
+\end{itemize}
+
+The elemental composition (elementome) is represented by
+
+\begin{equation}
+\mathbf{x}_j=(x_C,x_N,x_P,x_K,\ldots,x_E),
+\end{equation}
+
+where $x_i$ denotes the relative abundance of element $i$ in biomass and all elemental fractions sum to one.
+
+The elementome therefore defines the position of an individual within multidimensional stoichiometric trait space.
+
+\subsection{Grid Cells}
+
+Each grid cell stores:
+
+\begin{itemize}
+\item inorganic nutrient pools $I_i$,
+\item organic nutrient pools $O_i$,
+\item environmental field values $E$,
+\item disturbance field values $S$,
+\item local standing biomass.
+\end{itemize}
+
+\subsection{Spatial Scale}
+
+The environment consists of a rectangular lattice of dimensions $H \times W$. Individuals occupy discrete grid cells. Seed dispersal uses periodic (toroidal) boundary conditions.
+
+\subsection{Temporal Scale}
+
+Time advances in discrete simulation steps. During each step, environmental conditions are updated, nutrients are redistributed, individuals acquire resources, biomass is updated, mortality is evaluated, nutrients are recycled, and reproduction occurs.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Process Overview and Scheduling}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+During each simulation step the following sequence occurs:
+
+\begin{enumerate}
+
+\item Diffusion and external input of inorganic nutrients.
+\item Update of environmental and disturbance fields.
+\item Generation of local disturbance events.
+\item Evaluation of individual niche fitness.
+\item Resource uptake from local soil pools.
+\item Growth subject to stoichiometric and density-dependent constraints.
+\item Maintenance respiration.
+\item Mortality and disturbance-induced survival filtering.
+\item Production of organic matter through mortality and turnover.
+\item Mineralization of soil organic matter.
+\item Updating of nutrient pools.
+\item Reproduction and dispersal.
+\item Establishment of offspring.
+\item Updating of population and environmental states.
+
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Design Concepts}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Basic Principles}
+
+The model assumes that ecosystem dynamics arise from reciprocal interactions between organismal stoichiometry and environmental nutrient availability.
+
+The dominant ecological feedback can be summarized as
+
+\begin{equation}
+\text{Elementome}
+\rightarrow
+\text{Niche Fitness}
+\rightarrow
+\text{Growth}
+\rightarrow
+\text{Biomass}
+\rightarrow
+\text{Nutrient Uptake}
+\rightarrow
+\text{Soil Nutrients}
+\rightarrow
+\text{Stoichiometric Limitation}
+\rightarrow
+\text{Mortality/Reproduction}
+\rightarrow
+\text{Litter Inputs}
+\rightarrow
+\text{Mineralization}
+\rightarrow
+\text{Elementome}.
+\end{equation}
+
+This feedback links ecological and biogeochemical processes across organizational scales.
+
+\subsection{Emergence}
+
+Population size, species composition, biomass distributions, nutrient cycling rates, elemental diversity, nutrient limitation, and ecosystem productivity emerge from local interactions among individuals and their environment.
+
+\subsection{Adaptation}
+
+No active behavioural adaptation occurs. Adaptation emerges indirectly through ecological filtering, whereby individuals with elemental compositions closer to species-specific optima experience higher growth and reproductive success.
+
+\subsection{Objectives}
+
+Individuals possess no explicit objectives. Differential growth and survival emerge from interactions between stoichiometric composition and environmental conditions.
+
+\subsection{Learning}
+
+Individuals do not learn and possess no memory of previous environmental conditions.
+
+\subsection{Prediction}
+
+Individuals do not anticipate future environmental states.
+
+\subsection{Sensing}
+
+Individuals perceive local nutrient availability, local temperature, their own biomass, and their own elemental composition.
+
+\subsection{Interaction}
+
+Interactions occur indirectly through shared nutrient pools, local biomass crowding, nutrient depletion, and nutrient recycling.
+
+\subsection{Stochasticity}
+
+Stochasticity enters the model through environmental field generation, nutrient inputs, pulse nutrient events, demographic noise, disturbance occurrence, disturbance mortality, reproduction, and offspring establishment.
+
+\subsection{Collectives}
+
+No higher-order collective entities are represented.
+
+\subsection{Observation}
+
+Model outputs include abundance, biomass, age structure, species fitness, nutrient deficits, elemental dissimilarity indices, and nutrient pool sizes.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Details}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Initialization}
+
+\subsubsection{Species Niches}
+
+Each species $s$ is characterized by a stoichiometric niche defined by a multivariate optimum, $\boldsymbol{\mu}_s$, and a covariance matrix, $\Sigma_s$.
+
+The niche optimum specifies the preferred elemental composition of the species, whereas the covariance matrix determines tolerance to deviations from this optimum and allows correlations among elemental traits.
+
+Together, $\boldsymbol{\mu}_s$ and $\Sigma_s$ define the location and breadth of the species within elemental trait space.
+
+\subsubsection{Soil Nutrients}
+
+Each grid cell is assigned an initial nutrient pool, denoted $P_{\mathrm{cell}}$. This pool is partitioned among nutrients according to a stochastic nutrient-composition vector $\mathbf r=(r_1,\ldots,r_n)$, where $\sum_i r_i=1$.
+
+The initial inorganic nutrient pool associated with nutrient $i$ is
+
+\begin{equation}
+I_i=r_iP_{\mathrm{cell}}.
+\end{equation}
+
+Spatial heterogeneity is generated using correlated Gaussian noise, producing smoothly varying nutrient landscapes across the environment. Organic nutrient pools are initialized to zero.
+
+\subsubsection{Individuals}
+
+Individuals are randomly distributed throughout the landscape with an initial biomass of $m_0=0.1$.
+
+Initial elemental compositions are generated by perturbing the species-specific niche optimum and subsequently normalizing elemental abundances so that elemental fractions sum to unity.
+
+\subsection{Input Data}
+
+No external input data are required during model execution. All environmental variability is generated internally.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\section{Submodels}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsection{Environmental Fields}
+
+Environmental and disturbance fields are represented as temporally persistent and spatially autocorrelated stochastic surfaces.
+
+At each time step, field values are updated according to
+
+\begin{equation}
+F_{t+1}=\rho F_t+(1-\rho)\eta_t,
+\end{equation}
+
+where $F_t$ denotes the field value at time $t$, $\rho$ controls temporal persistence, and $\eta_t$ represents spatially smoothed Gaussian noise.
+
+\subsection{Temperature}
+
+Temperature varies according to a periodic forcing function,
+
+\begin{equation}
+T(t)=\bar T+A\sin\left(\frac{2\pi(t+\phi)}{\tau}\right),
+\end{equation}
+
+where $\bar T$ is the mean temperature, $A$ is the amplitude, $\phi$ is the phase, and $\tau$ is the oscillation period.
+
+Local temperature depends on environmental conditions:
+
+\begin{equation}
+T_{\mathrm{local}}
+=
+T(t)+\beta_E(E-0.5).
+\end{equation}
+
+\subsection{Niche Fitness}
+
+Individual performance depends on the similarity between the current elemental composition and the species-specific optimum.
+
+The mismatch between individual $j$ and species $s$ is quantified using the Mahalanobis distance,
+
+\begin{equation}
+D_{M,j}
+=
+\sqrt{
+(\mathbf{x}_j-\boldsymbol{\mu}_s)^T
+\Sigma_s^{-1}
+(\mathbf{x}_j-\boldsymbol{\mu}_s)
+}.
+\end{equation}
+
+Fitness is then calculated as
+
+\begin{equation}
+f_j
+=
+\max
+\left(
+0,
+1-
+\left(
+\frac{D_{M,j}}
+{\sigma_{\mathrm{thr}}}
+\right)^2
+\right).
+\end{equation}
+
+\subsection{Potential Growth}
+
+Potential biomass growth is
+
+\begin{equation}
+G_j^\ast
+=
+f_jr_gm_j
+\left[
+1+\beta_g(T_j-0.5)
+\right],
+\end{equation}
+
+where $r_g$ is the intrinsic growth rate and $\beta_g$ controls temperature sensitivity.
+
+\subsection{Nutrient Uptake}
+
+Individuals acquire nutrients from local soil pools to satisfy growth demand.
+
+For nutrient $i$ and individual $j$, uptake is calculated as
+
+\begin{equation}
+U_{ij}
+=
+D_{ij}
+\frac{A_{ij}}
+     {A_{ij}+K_m},
+\end{equation}
+
+where $D_{ij}$ is nutrient demand, $A_{ij}$ is local nutrient availability, and $K_m$ is the uptake half-saturation constant.
+
+Nutrient deficits are calculated as
+
+\begin{equation}
+\Delta_{ij}
+=
+\max(0,D_{ij}-U_{ij}).
+\end{equation}
+
+\subsection{Stoichiometric Limitation}
+
+Following nutrient uptake, elemental quotas are calculated as
+
+\begin{equation}
+Q_{ij}
+=
+\frac{E_{ij}}
+     {m_j},
+\end{equation}
+
+where $E_{ij}$ is the quantity of element $i$ contained within individual $j$.
+
+A nutrient-specific limitation factor is then computed as
+
+\begin{equation}
+g_{ij}
+=
+\max
+\left(
+0,
+1-\frac{Q_{\min}}
+       {Q_{ij}}
+\right),
+\end{equation}
+
+where $Q_{\min}$ is the minimum elemental quota required for growth.
+
+Overall growth limitation is determined by the most limiting element,
+
+\begin{equation}
+g_j=\min_i(g_{ij}),
+\end{equation}
+
+thereby implementing Liebig's law of the minimum.
+
+\subsection{Density Dependence}
+
+Local biomass density is calculated as
+
+\begin{equation}
+B_k
+=
+\sum_{j\in k}m_j,
+\end{equation}
+
+where $k$ denotes a grid cell.
+
+Available growing space is
+
+\begin{equation}
+S_k
+=
+\max
+\left(
+0,
+1-\frac{B_k}{K_B}
+\right),
+\end{equation}
+
+where $K_B$ is the local biomass carrying capacity.
+
+\subsection{Biomass Dynamics}
+
+Total acquired resources are
+
+\begin{equation}
+A_j
+=
+C_j
++
+\sum_iU_{ij},
+\end{equation}
+
+where $C_j$ represents growth supported by internally available carbon.
+
+Realized growth is
+
+\begin{equation}
+G_j=A_jg_jS_k.
+\end{equation}
+
+Respiration losses are
+
+\begin{equation}
+R_j
+=
+m_jr_r
+\left[
+1+\beta_r(T_j-0.5)
+\right],
+\end{equation}
+
+where $r_r$ is the respiration rate.
+
+Biomass evolves according to
+
+\begin{equation}
+m_{j,t+1}
+=
+m_{j,t}
++
+G_j
+-
+R_j
++
+\varepsilon_j,
+\end{equation}
+
+where
+
+\begin{equation}
+\varepsilon_j
+\sim
+\mathcal N
+(0,\sigma_d^2)
+\end{equation}
+
+represents demographic stochasticity.
+
+\subsection{Mortality}
+
+Individuals die when biomass falls below a minimum viability threshold,
+
+\begin{equation}
+m_j<m_{\min},
+\end{equation}
+
+where $m_{\min}=0.01$.
+
+Additional mortality occurs during disturbance events and depends on local environmental conditions, disturbance intensity, niche fitness, and biomass.
+
+\subsection{Organic Matter Production}
+
+Dead biomass and tissue turnover contribute nutrients to the soil organic matter pool.
+
+The litter input associated with nutrient $i$ and individual $j$ is
+
+\begin{equation}
+L_{ij}
+=
+(Dead_j+Turn_j)Q_{ij}.
+\end{equation}
+
+\subsection{Mineralization}
+
+Organic matter is converted into biologically available inorganic nutrients through mineralization.
+
+The mineralization flux associated with nutrient $i$ is
+
+\begin{equation}
+M_i
+=
+O_i r_m
+\left[
+1+\beta_m(T_i-0.5)
+\right],
+\end{equation}
+
+where $r_m$ is the mineralization rate and $\beta_m$ governs temperature sensitivity.
+
+Organic nutrient pools evolve as
+
+\begin{equation}
+O_{i,t+1}
+=
+O_{i,t}
++
+L_i
+-
+M_i,
+\end{equation}
+
+where $L_i$ represents litter inputs.
+
+Inorganic nutrient pools evolve as
+
+\begin{equation}
+I_{i,t+1}
+=
+I_{i,t}
++
+M_i
+-
+U_i,
+\end{equation}
+
+where $U_i$ represents total nutrient uptake.
+
+\subsection{Reproduction}
+
+Individuals are eligible to reproduce when biomass exceeds a reproductive threshold, $C_{\mathrm{seed}}$.
+
+The probability of seed production is
+
+\begin{equation}
+P_{\mathrm{seed}}
+=
+0.1f_j.
+\end{equation}
+
+Successful offspring inherit parental species identity and elemental composition and are assigned a species-specific seed biomass.
+
+\subsection{Recruitment}
+
+Following dispersal, offspring establish with probability
+
+\begin{equation}
+P_{\mathrm{est}}
+=
+\max
+\left(
+0,
+1-\frac{B_k}{K_B}
+\right).
+\end{equation}
+
+Successful recruits enter the population at the corresponding grid cell and participate in all subsequent demographic and ecological processes.
+
+
+\end{document}
