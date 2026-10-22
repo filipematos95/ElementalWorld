@@ -922,41 +922,41 @@ with st.sidebar:
         st.success(f"✅ Default config saved to `{DEFAULT_CONFIG_PATH}`")
 
 st.divider()
-    st.subheader("💾 Export Parameters")
+st.subheader("💾 Export Parameters")
     
-    # 1. Add a text input to customize the file name
-    param_filename = st.text_input(
-        "Config Filename",
-        value=f"params_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-        key="param_filename_input",
-        help="Enter the desired file name for the exported configuration."
-    )
-    
-    # Ensure it ends with .json
-    clean_param_filename = param_filename.strip()
-    if not clean_param_filename.endswith(".json"):
-        clean_param_filename += ".json"
+# 1. Add a text input to customize the file name
+param_filename = st.text_input(
+    "Config Filename",
+    value=f"params_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+    key="param_filename_input",
+    help="Enter the desired file name for the exported configuration."
+)
 
-    col_default, col_export = st.columns(2)
+# Ensure it ends with .json
+clean_param_filename = param_filename.strip()
+if not clean_param_filename.endswith(".json"):
+    clean_param_filename += ".json"
 
-    if col_default.button(
-            "⭐ Set as default config",
-            use_container_width=True,
-            help="Saves current sidebar config as the startup default."
-    ):
-        cfg = _build_config_dict()
-        os.makedirs(os.path.dirname(DEFAULT_CONFIG_PATH), exist_ok=True)
-        with open(DEFAULT_CONFIG_PATH, "w") as f:
-            json.dump(cfg, f, indent=2)
-        st.success(f"✅ Default config saved to `{DEFAULT_CONFIG_PATH}`")
+col_default, col_export = st.columns(2)
 
-    col_export.download_button(
-        "📥 Export Config",
-        data=json.dumps(_build_config_dict(), indent=2),
-        file_name=clean_param_filename,
-        mime="application/json",
+if col_default.button(
+        "⭐ Set as default config",
         use_container_width=True,
-    )
+        help="Saves current sidebar config as the startup default."
+):
+    cfg = _build_config_dict()
+    os.makedirs(os.path.dirname(DEFAULT_CONFIG_PATH), exist_ok=True)
+    with open(DEFAULT_CONFIG_PATH, "w") as f:
+        json.dump(cfg, f, indent=2)
+    st.success(f"✅ Default config saved to `{DEFAULT_CONFIG_PATH}`")
+
+col_export.download_button(
+    "📥 Export Config",
+    data=json.dumps(_build_config_dict(), indent=2),
+    file_name=clean_param_filename,
+    mime="application/json",
+    use_container_width=True,
+)
 
 
 # ─────────────────────────────────────────────
