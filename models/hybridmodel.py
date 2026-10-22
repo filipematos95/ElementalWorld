@@ -18,8 +18,8 @@ class HybridEcosystem:
                  seed_mass_by_species=None, seed_range_scale=10.0,
                  seed_range_alpha=1.0, seed_range_eps=1e-6,
                  K_biomass=1.5, 
-                 max_agents_per_cell=3, # NOVO: Limite de agentes por célula
-                 max_age=50.0,          # NOVO: Idade máxima esperada antes da senescência
+                 max_agents_per_cell=10, # NOVO: Limite de agentes por célula
+                 max_age=500.0,          # NOVO: Idade máxima esperada antes da senescência
                  soil_base_ratio=None, soil_pool_mean=1.0,
                  soil_pool_std=0.01, soil_ratio_noise=0.05, soil_input_rate=0.2,
                  input_drift_scale=0.08, soil_availability_rate=None,
