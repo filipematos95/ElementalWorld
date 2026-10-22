@@ -17,7 +17,10 @@ class HybridEcosystem:
                  mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
                  seed_mass_by_species=None, seed_range_scale=10.0,
                  seed_range_alpha=1.0, seed_range_eps=1e-6,
-                 K_biomass=1.5, soil_base_ratio=None, soil_pool_mean=1.0,
+                 K_biomass=1.5, 
+                 max_agents_per_cell=3, # NOVO: Limite de agentes por célula
+                 max_age=50.0,          # NOVO: Idade máxima esperada antes da senescência
+                 soil_base_ratio=None, soil_pool_mean=1.0,
                  soil_pool_std=0.01, soil_ratio_noise=0.05, soil_input_rate=0.2,
                  input_drift_scale=0.08, soil_availability_rate=None,
                  sigma_threshold=3.0,
@@ -40,6 +43,8 @@ class HybridEcosystem:
         self.H = height
         self.W = width
         self.MAX_AGENTS = max_agents
+        self.MAX_AGENTS_PER_CELL = max_agents_per_cell
+        self.max_age = max_age
 
         self.org_elements = org_elements or ["C", "N", "P", "K", "O", "Ca", "Mg", "S", "Fe", "Mn", "Zn"]
         self.soil_elements = soil_elements or self.org_elements[1:]
@@ -369,7 +374,16 @@ class HybridEcosystem:
 
         demo_noise = tf.random.normal(tf.shape(fin_mass), mean=0.0, stddev=self.demo_noise_std)
         fin_mass = fin_mass + demo_noise
+        
+        # --- IMPLEMENTAÇÃO 2: Senescência / Mortalidade por Idade ---
+        # Mortalidade base por perda de massa
         alive = tf.cast(fin_mass > 0.01, tf.float32)
+        
+        # Probabilidade de morte aumenta sigmoidalmente / exponencialmente com a idade
+        p_senescence = tf.sigmoid((age - self.max_age) / (self.max_age * 0.1))
+        survive_age = tf.cast(tf.random.uniform(tf.shape(alive)) > p_senescence, tf.float32)
+        alive = alive * survive_age
+        # -------------------------------------------------------------
 
         self.step_count.assign_add(1)
 
@@ -534,9 +548,25 @@ class HybridEcosystem:
                 tf.zeros((n_s, 1)),
             ], axis=1)
 
-            target_density = tf.gather_nd(grid_bio, tf.stack([ny, nx], axis=1))
+            # --- IMPLEMENTAÇÃO 1: Limite Físico Agentes/Célula ---
+            target_coords = tf.stack([ny, nx], axis=1)
+            
+            # Contagem atual de agentes por célula na grelha
+            living_coords = tf.cast(living_agents[:, self.I_Y:self.I_Y + 2], tf.int32)
+            agent_counts_grid = tf.tensor_scatter_nd_add(
+                tf.zeros((self.H, self.W), dtype=tf.float32),
+                living_coords,
+                tf.ones((new_count,), dtype=tf.float32)
+            )
+            
+            agents_at_target = tf.gather_nd(agent_counts_grid, target_coords)
+            space_available = agents_at_target < self.MAX_AGENTS_PER_CELL
+
+            # Probabilidade baseada em biomassa + restrição estrita de contagem por célula
+            target_density = tf.gather_nd(grid_bio, target_coords)
             establishment_prob = tf.maximum(0.0, 1.0 - target_density / self.K_biomass)
-            establish = tf.random.uniform((n_s,)) < establishment_prob
+            
+            establish = (tf.random.uniform((n_s,)) < establishment_prob) & space_available
             establish_idx = tf.where(establish)[:, 0]
 
             c_rows = tf.gather(c_rows, establish_idx)
