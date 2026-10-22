@@ -1,7 +1,14 @@
 import tensorflow as tf
 import numpy as np
 
-
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
+        
 class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_covariances,
                  org_elements=None,
