@@ -732,3 +732,65 @@ class HybridEcosystem:
 
         EDm = tf.reduce_sum(Dm * Pmin) / E
         return float(EDm.numpy())
+
+
+    def get_agent_diagnostics_df(self, max_samples=10000):
+        """
+        Extracts individual active agent metrics for frontend diagnostic plots.
+        Subsamples agents if active population exceeds max_samples to optimize memory.
+        
+        Returns:
+            dict or None: Cleaned diagnostic dictionary ready for pandas DataFrame creation.
+        """
+        active_mask = self.agents[:, self.I_ALIVE] > 0.5
+        active_idx = tf.where(active_mask)[:, 0]
+        n_active = tf.shape(active_idx)[0]
+
+        if n_active == 0:
+            return None
+
+        # Subsample to avoid frontend memory exhaustions during hyper-dense steps
+        if n_active > max_samples:
+            sampled_indices = tf.random.shuffle(tf.range(n_active))[:max_samples]
+            active_idx = tf.gather(active_idx, sampled_indices)
+
+        # Gather agent attributes
+        data = tf.gather(self.agents, active_idx)
+        spp_ids = tf.cast(data[:, self.I_SPP], tf.int32)
+        coords = tf.cast(data[:, self.I_Y:self.I_Y + 2], tf.int32)
+        mass = data[:, self.I_MASS]
+        age = data[:, self.I_AGE]
+        elementome = data[:, self.I_E0:self.I_E1]
+
+        # 1. Mahalanobis Niche Fitness
+        my_centers = tf.gather(self.niche_centers, spp_ids)
+        fitness = self._compute_niche_fitness_mahalanobis(elementome, my_centers, spp_ids)
+
+        # 2. Local Temperature Impact
+        temp_scalar = self.temperature.read_value()
+        env_f = self.env_field.read_value()
+        temp_field = temp_scalar + self.temperature_spatial_strength * (env_f - 0.5)
+        temp_field = tf.clip_by_value(temp_field, 0.0, 1.0)
+        temp_at_agents = tf.gather_nd(temp_field, coords)
+        
+        temp_growth_factor = 1.0 + self.temperature_growth_strength * (temp_at_agents - 0.5)
+
+        # 3. Realized Growth Rate Calculation
+        realized_growth_rate = fitness * self.growth_rate * mass * temp_growth_factor
+
+        # 4. Extract Stoichiometric Composition (N is idx 1, P is idx 2)
+        n_comp = elementome[:, 1]
+        p_comp = elementome[:, 2]
+
+        return {
+            "species": spp_ids.numpy(),
+            "y": coords[:, 0].numpy(),
+            "x": coords[:, 1].numpy(),
+            "mass": mass.numpy(),
+            "age": age.numpy(),
+            "fitness": fitness.numpy(),
+            "growth_rate": realized_growth_rate.numpy(),
+            "N_comp": n_comp.numpy(),
+            "P_comp": p_comp.numpy(),
+            "NP_ratio": (n_comp / (p_comp + 1e-9)).numpy(),
+        }

@@ -11,6 +11,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 import tensorflow as tf
 
@@ -93,6 +94,8 @@ def _build_config_dict() -> dict:
         "H": st.session_state.get("H", 100),
         "W": st.session_state.get("W", 100),
         "MAX_AGENTS": st.session_state.get("MAX_AGENTS", 150000),
+        "max_agents_per_cell": st.session_state.get("max_agents_per_cell", 3),
+        "max_age": st.session_state.get("max_age", 50.0),
         "N_STEPS": st.session_state.get("N_STEPS", 1500),
         "SEED": st.session_state.get("SEED", 35),
         "NSEEDS": st.session_state.get("NSEEDS", 1),
@@ -170,6 +173,7 @@ for key, default in [
     ("cov_code", DEFAULT_COV_CODE),
     ("loaded_final_states", None),
     ("loaded_completed_steps", 0),
+    ("model_instance", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -180,7 +184,7 @@ for key, default in [
 # ─────────────────────────────────────────────
 def _apply_config(params: dict):
     scalar_keys = [
-        "H", "W", "MAX_AGENTS", "N_STEPS", "SEED", "NSEEDS",
+        "H", "W", "MAX_AGENTS", "max_agents_per_cell", "max_age", "N_STEPS", "SEED", "NSEEDS",
         "growth_rate", "respiration_rate", "turnover_rate",
         "mineralization_rate", "seed_cost", "seed_mass",
         "K_biomass", "soil_input_rate",
@@ -280,7 +284,7 @@ def _apply_everything(data: dict):
 
 
 def _make_model(
-        H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
+        H, W, MAX_AGENTS, max_agents_per_cell, max_age, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
         mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,
         K_biomass, sbr,
@@ -300,6 +304,8 @@ def _make_model(
         height=H,
         width=W,
         max_agents=MAX_AGENTS,
+        max_agents_per_cell=max_agents_per_cell,
+        max_age=max_age,
         niche_centers=np.array(spp_centers, dtype=np.float32),
         niche_covariances=SPP_COVARIANCES,
         org_elements=ORG_ELEMENTS,
@@ -350,7 +356,7 @@ def _make_model(
 # ENSEMBLE HELPER
 # ─────────────────────────────────────────────
 def _run_one_seed(
-        seed, H, W, MAX_AGENTS, N_STEPS, spp_centers, SPP_COVARIANCES,
+        seed, H, W, MAX_AGENTS, max_agents_per_cell, max_age, N_STEPS, spp_centers, SPP_COVARIANCES,
         initial_seeds, growth_rate, respiration_rate, turnover_rate,
         mineralization_rate, seed_cost, seed_mass, K_biomass, sbr,
         soil_pool_mean, soil_pool_std, soil_ratio_noise, soil_input_rate,
@@ -374,7 +380,7 @@ def _run_one_seed(
     np.random.seed(seed)
 
     model = _make_model(
-        H, W, MAX_AGENTS, spp_centers, SPP_COVARIANCES,
+        H, W, MAX_AGENTS, max_agents_per_cell, max_age, spp_centers, SPP_COVARIANCES,
         growth_rate, respiration_rate, turnover_rate,
         mineralization_rate, seed_cost, seed_mass, seed_mass_by_species, seed_range_scale, seed_range_alpha,
         K_biomass, sbr,
@@ -469,6 +475,7 @@ def _run_one_seed(
         history_deficit=history_deficit,
         history_spp_age=history_spp_age,
         history_spp_elemental_dissimilarity=history_spp_elemental_dissimilarity,
+        model=model,  # <-- STORED MODEL INSTANCE FOR DIAGNOSTICS
         final_state=dict(
             agents=model.agents.numpy().copy(),
             soil=model.soil.numpy().copy(),
@@ -572,6 +579,7 @@ with st.sidebar:
         H = st.number_input("Grid Height", 10, 500, 100, key="H")
         W = st.number_input("Grid Width", 10, 500, 100, key="W")
         MAX_AGENTS = st.number_input("Max Agents", 10000, 500000, 150000, key="MAX_AGENTS", step=10000)
+        max_agents_per_cell = st.number_input("Max Agents per Cell", 1, 20, 3, key="max_agents_per_cell")
         N_STEPS = st.slider("Number of Steps", 100, 5000, 1500, key="N_STEPS", step=100)
         SEED = st.number_input("Random Seed", 0, 9999, 35, key="SEED")
         NSEEDS = st.slider(
@@ -587,10 +595,11 @@ with st.sidebar:
             help="Save full grid maps every N steps."
         )
 
-        st.subheader("Biological Rates")
+        st.subheader("Biological Rates & Aging")
         growth_rate = st.slider("Growth Rate", 0.01, 1.0, 0.45, key="growth_rate", step=0.01)
         respiration_rate = st.slider("Respiration Rate", 0.001, 0.1, 0.015, key="respiration_rate", step=0.001, format="%.3f")
         turnover_rate = st.slider("Turnover Rate", 0.001, 0.1, 0.03, key="turnover_rate", step=0.001, format="%.3f")
+        max_age = st.slider("Max Age (Senescence)", 10.0, 500.0, 50.0, key="max_age", step=5.0)
         mineralization_rate = st.slider("Mineralization Rate", 0.01, 0.2, 0.05, key="mineralization_rate", step=0.005)
         seed_cost = st.slider("Seed Cost", 0.001, 0.1, 0.02, key="seed_cost", step=0.001, format="%.3f")
         seed_mass = st.slider("Seed Mass", 0.001, 0.1, 0.02, key="seed_mass", step=0.001, format="%.3f")
@@ -985,8 +994,8 @@ if run_btn:
 
         result = _run_one_seed(
             seed=seed,
-            H=H, W=W, MAX_AGENTS=MAX_AGENTS, N_STEPS=N_STEPS,
-            spp_centers=spp_centers, SPP_COVARIANCES=SPP_COVARIANCES,
+            H=H, W=W, MAX_AGENTS=MAX_AGENTS, max_agents_per_cell=max_agents_per_cell, max_age=max_age,
+            N_STEPS=N_STEPS, spp_centers=spp_centers, SPP_COVARIANCES=SPP_COVARIANCES,
             initial_seeds=initial_seeds,
             growth_rate=growth_rate, respiration_rate=respiration_rate,
             turnover_rate=turnover_rate, mineralization_rate=mineralization_rate,
@@ -1029,6 +1038,9 @@ if run_btn:
             temperature_mineralization_strength=temperature_mineralization_strength,
         )
         all_runs.append(result)
+
+    # Save live model instance reference for agent diagnostics
+    st.session_state["model_instance"] = all_runs[0]["model"]
 
     history_biomass = np.mean([r["history_biomass"] for r in all_runs], axis=0).tolist()
     history_agents = np.mean([r["history_agents"] for r in all_runs], axis=0).astype(int).tolist()
@@ -1129,6 +1141,8 @@ if run_btn:
             "H": H,
             "W": W,
             "MAX_AGENTS": MAX_AGENTS,
+            "max_agents_per_cell": max_agents_per_cell,
+            "max_age": max_age,
             "N_STEPS": completed_steps,
             "SEED": SEED,
             "NSEEDS": NSEEDS,
@@ -1308,6 +1322,67 @@ if st.session_state["ran"]:
         if any(len(a) > 0 for a in spp_age):
             st.subheader("Mean Agent Age per Species")
             st.plotly_chart(ep.plot_species_age(steps_scalar, spp_age, RES_SPP_LABELS), width='stretch')
+
+        # -------------------------------------------------------------
+        # NEW AGENT-LEVEL DIAGNOSTIC SCATTER PLOTS
+        # -------------------------------------------------------------
+        if st.session_state.get("model_instance") is not None:
+            model_inst = st.session_state["model_instance"]
+            if hasattr(model_inst, "get_agent_diagnostics_df"):
+                diag_data = model_inst.get_agent_diagnostics_df()
+                if diag_data is not None:
+                    st.divider()
+                    st.subheader("🔬 Agent-Level Stoichiometric & Growth Diagnostics")
+                    df_agents = pd.DataFrame(diag_data)
+                    df_agents["species"] = df_agents["species"].astype(str)
+
+                    col_diag1, col_diag2 = st.columns(2)
+                    with col_diag1:
+                        st.markdown("**Growth Rate vs. N & P Composition**")
+                        fig_np = px.scatter(
+                            df_agents,
+                            x="N_comp",
+                            y="growth_rate",
+                            color="P_comp",
+                            size="mass",
+                            hover_data=["species", "age", "NP_ratio", "fitness"],
+                            labels={
+                                "N_comp": "Nitrogen Fraction (N)",
+                                "growth_rate": "Realized Growth Rate",
+                                "P_comp": "Phosphorus (P)",
+                                "mass": "Mass",
+                                "species": "Species",
+                            },
+                            title="Growth Rate vs N Composition (Color = Phosphorus)",
+                            color_continuous_scale="Viridis",
+                        )
+                        st.plotly_chart(fig_np, use_container_width=True)
+
+                    with col_diag2:
+                        st.markdown("**Growth Rate vs. Age**")
+                        fig_age = px.scatter(
+                            df_agents,
+                            x="age",
+                            y="growth_rate",
+                            color="species",
+                            size="mass",
+                            hover_data=["fitness", "N_comp", "P_comp"],
+                            labels={
+                                "age": "Agent Age (Steps)",
+                                "growth_rate": "Realized Growth Rate",
+                                "species": "Species ID",
+                                "mass": "Mass",
+                            },
+                            title="Growth Rate vs Age by Species",
+                        )
+                        if hasattr(model_inst, "max_age"):
+                            fig_age.add_vline(
+                                x=model_inst.max_age,
+                                line_dash="dash",
+                                line_color="red",
+                                annotation_text="Max Age",
+                            )
+                        st.plotly_chart(fig_age, use_container_width=True)
 
         st.subheader("Covariance Matrices")
         st.plotly_chart(
