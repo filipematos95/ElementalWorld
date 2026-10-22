@@ -6,7 +6,7 @@ The protocol is organized into three main sections:a
 
 1. Overview
 2. Design Concepts
-3. Details
+3. DetailsP
 
 ---
 
@@ -406,19 +406,3 @@ Submodels are usually the most technical and extensive part of an ODD descriptio
 | Which processes are random? | Stochasticity |
 | What outputs are analyzed? | Observation |
 | How are the processes implemented mathematically? | Submodels |
-
----
-
-# ODD Sections Most Important for Ecosystem Tipping Point Models
-
-For models focused on resilience, critical transitions, permafrost thaw, forest dieback, and carbon cycle dynamics, particular attention should be given to:
-
-1. Purpose and Patterns
-2. Basic Principles
-3. Emergence
-4. Interaction
-5. Stochasticity
-6. Observation
-7. Submodels
-
-These sections explain how ecosystem-scale regime shifts emerge from local ecological processes and how resilience indicators such as AR(1), variance, and interannual variability are calculated and analyzed.
