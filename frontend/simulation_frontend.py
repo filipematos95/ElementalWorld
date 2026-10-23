@@ -1358,6 +1358,13 @@ if st.session_state["ran"]:
                         )
                         st.plotly_chart(fig_np, use_container_width=True)
 
+                        st.download_button(
+                        "Download data (CSV)",
+                        data=df_agents.to_csv(index=False),
+                        file_name="plot_data.csv",
+                        mime="text/csv"
+)
+
                     with col_diag2:
                         st.markdown("**Growth Rate vs. Age**")
                         fig_age = px.scatter(
