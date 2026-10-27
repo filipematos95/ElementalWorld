@@ -2,35 +2,49 @@
 import plotly.graph_objects as go
 import plotly.subplots as sp
 import numpy as np
+import math
 
-NUTRIENT_NAMES = ["Nitrogen (N)", "Phosphorus (P)", "Potassium (K)", "Oxygen (O)"]
-ELEMENTS       = ["C", "N", "P", "K", "O"]
+DEFAULT_ORG_ELEMENTS  = ["C", "N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"]
+DEFAULT_SOIL_ELEMENTS = ["N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn"]
 SPP_COLORS     = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728",
                   "#9467bd", "#8c564b", "#e377c2", "#7f7f7f",
                   "#bcbd22", "#17becf"]
 
 
-def plot_soil(soil: np.ndarray) -> go.Figure:
-    fig = sp.make_subplots(rows=2, cols=2, subplot_titles=NUTRIENT_NAMES,
-                        horizontal_spacing=0.15, vertical_spacing=0.15)
-    for idx, (row, col) in enumerate([(1,1), (1,2), (2,1), (2,2)]):
+def plot_soil(soil: np.ndarray, soil_elements=None) -> go.Figure:
+    soil_elements = list(soil_elements or DEFAULT_SOIL_ELEMENTS)
+    n_el  = len(soil_elements)
+    ncols = 3
+    nrows = math.ceil(n_el / ncols)
+    hs, vs = 0.12, 0.12
+
+    fig = sp.make_subplots(
+        rows=nrows, cols=ncols, subplot_titles=soil_elements,
+        horizontal_spacing=hs, vertical_spacing=vs,
+    )
+
+    w = (1 - hs * (ncols - 1)) / ncols
+    h = (1 - vs * (nrows - 1)) / nrows
+
+    for idx, el in enumerate(soil_elements):
+        r, c = divmod(idx, ncols)
         fig.add_trace(
             go.Heatmap(
                 z=soil[:, :, idx].tolist(),
                 colorscale="Viridis",
-                coloraxis=f"coloraxis{idx+1}",
-                name=NUTRIENT_NAMES[idx],
+                name=el,
+                colorbar=dict(
+                    x=c * (w + hs) + w + 0.01,
+                    y=1 - (r * (h + vs) + h / 2),
+                    yanchor="middle",
+                    len=h * 0.9,
+                    thickness=10,
+                ),
             ),
-            row=row, col=col
+            row=r + 1, col=c + 1,
         )
-    fig.update_layout(
-        template="plotly_white",
-        height=700,
-        coloraxis1=dict(colorscale="Viridis", colorbar=dict(x=0.44, y=0.78, len=0.44, thickness=15)),
-        coloraxis2=dict(colorscale="Viridis", colorbar=dict(x=1.00, y=0.78, len=0.44, thickness=15)),
-        coloraxis3=dict(colorscale="Viridis", colorbar=dict(x=0.44, y=0.22, len=0.44, thickness=15)),
-        coloraxis4=dict(colorscale="Viridis", colorbar=dict(x=1.00, y=0.22, len=0.44, thickness=15)),
-    )
+
+    fig.update_layout(template="plotly_white", height=250 * nrows + 100)
     fig.update_yaxes(autorange="reversed")
     return fig
 
@@ -57,27 +71,25 @@ def plot_agents(steps: np.ndarray, history_agents: list) -> go.Figure:
     return fig
 
 
-def plot_element_pools(steps: np.ndarray, elem_arr: np.ndarray) -> go.Figure:
+def plot_element_pools(steps: np.ndarray, elem_arr: np.ndarray,
+                       org_elements=None) -> go.Figure:
     n_pools     = elem_arr.shape[1]
-    pool_labels = ELEMENTS[:n_pools]
+    pool_labels = list(org_elements or DEFAULT_ORG_ELEMENTS)[:n_pools]
     steps_list  = steps.tolist()
 
-    fig = sp.make_subplots(rows=1, cols=n_pools, subplot_titles=pool_labels)
+    ncols = 4
+    nrows = math.ceil(n_pools / ncols)
+    fig = sp.make_subplots(rows=nrows, cols=ncols, subplot_titles=pool_labels,
+                           horizontal_spacing=0.06, vertical_spacing=0.15)
     for i, label in enumerate(pool_labels):
+        r, c = divmod(i, ncols)
         fig.add_trace(
-            go.Scatter(
-                x=steps_list,
-                y=elem_arr[:, i].tolist(),
-                mode="lines",
-                line=dict(width=2),
-                name=label,
-                showlegend=False,
-            ),
-            row=1, col=i + 1
+            go.Scatter(x=steps_list, y=elem_arr[:, i].tolist(), mode="lines",
+                       line=dict(width=2), name=label, showlegend=False),
+            row=r + 1, col=c + 1,
         )
-    fig.update_layout(template="plotly_white", height=400)
-    for i in range(1, n_pools + 1):
-        fig.update_xaxes(title_text="Step", row=1, col=i)
+        fig.update_xaxes(title_text="Step", row=r + 1, col=c + 1)
+    fig.update_layout(template="plotly_white", height=280 * nrows + 60)
     return fig
 
 
@@ -379,42 +391,34 @@ def plot_dead_fitness(steps: np.ndarray, history_spp_dead_fitness_mean: list,
     return fig
 
 def plot_nutrient_deficit(steps: np.ndarray, history_deficit: list,
-                          spp_labels: list) -> go.Figure:
-    """
-    history_deficit: list of N_SPP lists, each of shape (T, 4).
-    One subplot per species, one line per nutrient [N, P, K, O].
-    """
+                          spp_labels: list, soil_elements=None) -> go.Figure:
+    """history_deficit: N_SPP lists, each of shape (T, N_soil)."""
+    soil_elements = list(soil_elements or DEFAULT_SOIL_ELEMENTS)
     n_spp      = len(spp_labels)
     steps_list = steps.tolist()
-    nutrient_labels = ["N", "P", "K", "O"]
-    nutrient_colors = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728"]
+    colors     = SPP_COLORS  # 10 colors, enough for 9 elements
 
     fig = sp.make_subplots(rows=1, cols=n_spp, subplot_titles=spp_labels,
-                        shared_yaxes=True)
+                           shared_yaxes=True)
 
     for s_id, (data, label) in enumerate(zip(history_deficit, spp_labels)):
-        arr = np.array(data)          # shape (T, 4)
-        for i, (nutrient, color) in enumerate(zip(nutrient_labels, nutrient_colors)):
+        arr = np.array(data)  # (T, N_soil)
+        for i, nutrient in enumerate(soil_elements[:arr.shape[1]]):
             fig.add_trace(
                 go.Scatter(
-                    x=steps_list,
-                    y=arr[:, i].tolist(),
-                    mode="lines",
+                    x=steps_list, y=arr[:, i].tolist(), mode="lines",
                     name=nutrient,
-                    line=dict(color=color, width=2),
-                    legendgroup=nutrient,              # group same nutrients across subplots
-                    showlegend=(s_id == 0),            # only show legend once
+                    line=dict(color=colors[i % len(colors)], width=2),
+                    legendgroup=nutrient,
+                    showlegend=(s_id == 0),
                 ),
-                row=1, col=s_id + 1
+                row=1, col=s_id + 1,
             )
         fig.update_xaxes(title_text="Step", row=1, col=s_id + 1)
 
     fig.update_yaxes(title_text="Unmet Demand", row=1, col=1)
-    fig.update_layout(
-        title="Unmet Nutrient Demand per Species",
-        template="plotly_white",
-        height=400,
-    )
+    fig.update_layout(title="Unmet Nutrient Demand per Species",
+                      template="plotly_white", height=400)
     return fig
 
 def plot_species_biomass_std(steps: np.ndarray, history_spp_biomass: list,
