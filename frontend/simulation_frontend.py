@@ -1271,7 +1271,7 @@ if st.session_state["ran"]:
         elem_arr = res["history_elements"]
         if elem_arr.ndim == 2 and elem_arr.shape[1] > 0:
             st.subheader("Element Pools Over Time")
-            st.plotly_chart(ep.plot_element_pools(steps_scalar, ORG_ELEMENTS), width='stretch')
+            st.plotly_chart(ep.plot_element_pools(steps_scalar, elem_arr, ORG_ELEMENTS), width='stretch')
 
         deficit_data = res.get("history_deficit", [])
         if any(len(d) > 0 for d in deficit_data):
