@@ -27,7 +27,8 @@ st.markdown("Configure parameters in the sidebar, then click **▶ Run Simulatio
 DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "results", "default_config.json")
 
 ORG_ELEMENTS = ["C", "N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"]
-SOIL_ELEMENTS = ["N", "P", "K", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"]
+ATMOSPHERIC_ELEMENTS = ["C", "O"]
+SOIL_ELEMENTS = [e for e in ORG_ELEMENTS if e not in ATMOSPHERIC_ELEMENTS]
 
 N_ORG = len(ORG_ELEMENTS)
 N_SOIL = len(SOIL_ELEMENTS)
@@ -1270,13 +1271,13 @@ if st.session_state["ran"]:
         elem_arr = res["history_elements"]
         if elem_arr.ndim == 2 and elem_arr.shape[1] > 0:
             st.subheader("Element Pools Over Time")
-            st.plotly_chart(ep.plot_element_pools(steps_scalar, elem_arr), width='stretch')
+            st.plotly_chart(ep.plot_element_pools(steps_scalar, ORG_ELEMENTS), width='stretch')
 
         deficit_data = res.get("history_deficit", [])
         if any(len(d) > 0 for d in deficit_data):
             st.subheader("Unmet Nutrient Demand per Species")
             st.plotly_chart(
-                ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS),
+                ep.plot_nutrient_deficit(steps_scalar, deficit_data, RES_SPP_LABELS, SOIL_ELEMENTS),
                 width='stretch'
             )
 

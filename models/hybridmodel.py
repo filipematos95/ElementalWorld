@@ -13,6 +13,7 @@ class HybridEcosystem:
     def __init__(self, height, width, max_agents, niche_centers, niche_covariances,
                  org_elements=None,
                  soil_elements=None,
+                 atmospheric_elements=None,
                  growth_rate=0.7, respiration_rate=0.02, turnover_rate=0.02,
                  mineralization_rate=0.05, seed_cost=0.3, seed_mass=0.05,
                  seed_mass_by_species=None, seed_range_scale=10.0,
@@ -47,7 +48,16 @@ class HybridEcosystem:
         self.max_age = max_age
 
         self.org_elements = org_elements or ["C", "N", "P", "K", "O", "Ca", "Mg", "S", "Fe", "Mn", "Zn"]
-        self.soil_elements = soil_elements or self.org_elements[1:]
+
+        self.atmospheric_elements = atmospheric_elements or ["C", "O"]
+        self.atm_idx = [self.org_elements.index(e) for e in self.atmospheric_elements]
+
+
+        self.soil_elements = soil_elements or [
+            e for e in self.org_elements if e not in self.atmospheric_elements
+        ]
+
+
 
         self.N_org = len(self.org_elements)
         self.N_soil = len(self.soil_elements)
@@ -302,7 +312,7 @@ class HybridEcosystem:
         age = active_data[:, self.I_AGE]
 
         curr_elementome = active_data[:, self.I_E0:self.I_E1]
-        curr_C = curr_elementome[:, 0]
+
 
         my_centers = tf.gather(self.niche_centers, spp_ids)
         niche_fitness = self._compute_niche_fitness_mahalanobis(
@@ -317,8 +327,11 @@ class HybridEcosystem:
         temp_growth_factor = 1.0 + self.temperature_growth_strength * (temp_at_agents - 0.5)
         desired_growth = niche_fitness * self.growth_rate * mass * temp_growth_factor
 
-        c_uptake_potential = desired_growth * curr_C
-        remaining = desired_growth - c_uptake_potential
+        # Atmospheric uptake (C and O): proportional to their share in the elementome
+        air_frac = tf.gather(curr_elementome, tf.constant(self.atm_idx, dtype=tf.int32), axis=1)
+        air_uptake = desired_growth[:, tf.newaxis] * air_frac
+        air_uptake_total = tf.reduce_sum(air_uptake, axis=1)
+        remaining = tf.maximum(0.0, desired_growth - air_uptake_total)
 
         my_niche_pref = tf.gather(self.niche_centers, spp_ids)
         my_niche_pref_soil = tf.gather(
@@ -340,8 +353,7 @@ class HybridEcosystem:
         )
         self.last_deficit.assign(per_spp_deficit)
 
-        c_uptake = c_uptake_potential
-        actual_growth = c_uptake + tf.reduce_sum(uptake, axis=1)
+        actual_growth = air_uptake_total + tf.reduce_sum(uptake, axis=1)
 
         soil_to_org = tf.one_hot(
             tf.constant(self.org_to_soil_idx, dtype=tf.int32),
