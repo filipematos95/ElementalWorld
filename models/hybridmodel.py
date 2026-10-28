@@ -372,11 +372,12 @@ class HybridEcosystem:
 
         elem_pools = mass[:, tf.newaxis] * curr_elementome + uptake_full + air_uptake_full
 
-        MIN_QUOTA = 0.01
+        MIN_QUOTA_FRAC = 0.01
         Q = elem_pools / (mass[:, tf.newaxis] + 1e-9)
-
-        g = tf.maximum(0.0, 1.0 - (MIN_QUOTA / (Q + 1e-9)))
+        min_quota = MIN_QUOTA_FRAC * my_centers
+        g = tf.maximum(0.0, 1.0 - (min_quota / (Q + 1e-9)))
         limit_g = tf.reduce_min(g, axis=1)
+
 
         flat_coords = coords[:, 0] * self.W + coords[:, 1]
 
@@ -802,6 +803,10 @@ class HybridEcosystem:
         n_comp = elementome[:, 1]
         p_comp = elementome[:, 2]
 
+        Q = elementome
+        g = tf.maximum(0.0, 1.0 - 0.01 / (Q + 1e-9))
+        limit_g = tf.reduce_min(g, axis=1)
+
         return {
             "species": spp_ids.numpy(),
             "y": coords[:, 0].numpy(),
@@ -813,4 +818,5 @@ class HybridEcosystem:
             "N_comp": n_comp.numpy(),
             "P_comp": p_comp.numpy(),
             "NP_ratio": (n_comp / (p_comp + 1e-9)).numpy(),
+            "limit_g": limit_g.numpy(),
         }
