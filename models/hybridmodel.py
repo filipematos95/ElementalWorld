@@ -362,7 +362,15 @@ class HybridEcosystem:
         )
         uptake_full = tf.matmul(uptake, soil_to_org)
 
-        elem_pools = mass[:, tf.newaxis] * curr_elementome + uptake_full
+        atm_to_org = tf.one_hot(
+            tf.constant(self.atm_idx, dtype=tf.int32),
+            depth=self.N_org,
+            dtype=tf.float32
+        )
+
+        air_uptake_full = tf.matmul(air_uptake, atm_to_org)
+
+        elem_pools = mass[:, tf.newaxis] * curr_elementome + uptake_full + air_uptake_full
 
         MIN_QUOTA = 0.01
         Q = elem_pools / (mass[:, tf.newaxis] + 1e-9)
