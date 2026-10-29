@@ -1252,7 +1252,7 @@ if st.session_state["ran"]:
     with tab_soil:
         if soil is not None:
             st.subheader("Soil Nutrient Distribution at t=0")
-            st.plotly_chart(ep.plot_soil(soil), width='stretch')
+            st.plotly_chart(ep.plot_soil(soil, SOIL_ELEMENTS), width='stretch')
         else:
             st.info("Soil snapshot not available in this file (saved before v2).")
 
@@ -1391,6 +1391,33 @@ if st.session_state["ran"]:
                                 annotation_text="Max Age",
                             )
                         st.plotly_chart(fig_age, use_container_width=True)
+
+                    st.markdown("**Quota limitation (limit_g) by species**")
+                    col_lim1, col_lim2 = st.columns(2)
+
+                    with col_lim1:
+                        fig_lim = px.box(
+                            df_agents,
+                            x="species",
+                            y="limit_g",
+                            color="species",
+                            points="outliers",
+                            labels={"species": "Species", "limit_g": "limit_g (0 = growth blocked)"},
+                            title="limit_g by species",
+                        )
+                        fig_lim.update_yaxes(range=[-0.02, 1.02])
+                        st.plotly_chart(fig_lim, use_container_width=True)
+
+                    with col_lim2:
+                        fig_el = px.histogram(
+                            df_agents,
+                            x="limiting_element",
+                            color="species",
+                            barmode="group",
+                            labels={"limiting_element": "Most limiting element"},
+                            title="Which element limits growth",
+                        )
+                        st.plotly_chart(fig_el, use_container_width=True)    
 
         st.subheader("Covariance Matrices")
         st.plotly_chart(
