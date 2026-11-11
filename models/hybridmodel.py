@@ -806,6 +806,7 @@ class HybridEcosystem:
         Q = elementome
         g = tf.maximum(0.0, 1.0 - 0.01 / (Q + 1e-9))
         limit_g = tf.reduce_min(g, axis=1)
+        limiting_idx = tf.argmin(g, axis=1).numpy()
 
         return {
             "species": spp_ids.numpy(),
@@ -819,4 +820,6 @@ class HybridEcosystem:
             "P_comp": p_comp.numpy(),
             "NP_ratio": (n_comp / (p_comp + 1e-9)).numpy(),
             "limit_g": limit_g.numpy(),
+            "limit_g": limit_g.numpy(),
+            "limiting_element": [self.org_elements[i] for i in limiting_idx],
         }
