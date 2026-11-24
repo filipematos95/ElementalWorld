@@ -39,7 +39,10 @@ class HybridEcosystem:
                  temperature_spatial_strength=0.0,
                  temperature_growth_strength=0.5,
                  temperature_respiration_strength=0.3,
-                 temperature_mineralization_strength=0.4):
+                 temperature_mineralization_strength=0.4,
+                 uptake_mode="niche",
+                 K_m = 0.1,
+                 K_m_pool=None):
 
         self.H = height
         self.W = width
@@ -57,7 +60,12 @@ class HybridEcosystem:
             e for e in self.org_elements if e not in self.atmospheric_elements
         ]
 
-
+        self.K_m = 0.1     
+        self.K_m_pool = K_m_pool if K_m_pool is not None else self.K_m * self.N_soil                # half-saturation constant (was a local in step)
+        self.uptake_mode = uptake_mode     # "niche" (old) or "soil" (new)
+        self._uptake_fn = {
+            "niche": self._uptake_niche_proportional,
+            "soil": self._uptake_soil_proportional,}[uptake_mode]
 
         self.N_org = len(self.org_elements)
         self.N_soil = len(self.soil_elements)
@@ -328,25 +336,11 @@ class HybridEcosystem:
         desired_growth = niche_fitness * self.growth_rate * mass * temp_growth_factor
 
         # Atmospheric uptake (C and O): proportional to their share in the elementome
-        air_frac = tf.gather(curr_elementome, tf.constant(self.atm_idx, dtype=tf.int32), axis=1)
-        air_uptake = desired_growth[:, tf.newaxis] * air_frac
-        air_uptake_total = tf.reduce_sum(air_uptake, axis=1)
-        remaining = tf.maximum(0.0, desired_growth - air_uptake_total)
-
-        my_niche_pref = tf.gather(self.niche_centers, spp_ids)
-        my_niche_pref_soil = tf.gather(
-            my_niche_pref, tf.constant(self.org_to_soil_idx, dtype=tf.int32), axis=1
-        )
-        niche_norm = my_niche_pref_soil / (
-                tf.reduce_sum(my_niche_pref_soil, axis=1, keepdims=True) + 1e-9
-        )
-
-        desired_soil = remaining[:, tf.newaxis] * niche_norm
         available_soil = tf.gather_nd(inorg_available, coords)
-
-        K_m = 0.1
-        uptake = desired_soil * (available_soil / (available_soil + K_m))
-        deficits = tf.maximum(0.0, desired_soil - uptake)
+        air_uptake, uptake, deficits = self._uptake_fn(
+            desired_growth, curr_elementome, spp_ids, available_soil
+        )
+        air_uptake_total = tf.reduce_sum(air_uptake, axis=1)
 
         per_spp_deficit = tf.math.unsorted_segment_sum(
             deficits, spp_ids, num_segments=self.N_spp
@@ -820,6 +814,54 @@ class HybridEcosystem:
             "P_comp": p_comp.numpy(),
             "NP_ratio": (n_comp / (p_comp + 1e-9)).numpy(),
             "limit_g": limit_g.numpy(),
-            "limit_g": limit_g.numpy(),
             "limiting_element": [self.org_elements[i] for i in limiting_idx],
         }
+
+    def _air_uptake(self, desired_growth, curr_elementome):
+        """Air-supplied elements (C, O): proportional to the agent's own
+        fractions, no availability limit. Returns the air uptake per element
+        and the remaining demand to be met from the soil."""
+        air_frac = tf.gather(
+            curr_elementome, tf.constant(self.atm_idx, dtype=tf.int32), axis=1
+        )
+        air_uptake = desired_growth[:, tf.newaxis] * air_frac
+        remaining = tf.maximum(
+            0.0, desired_growth - tf.reduce_sum(air_uptake, axis=1)
+        )
+        return air_uptake, remaining
+
+    def _uptake_niche_proportional(self, desired_growth, curr_elementome,
+                                   spp_ids, available_soil):
+        """OLD mechanism: the soil demand is split according to the
+        species niche center (restricted to the soil elements)."""
+        air_uptake, remaining = self._air_uptake(desired_growth, curr_elementome)
+
+        niche_pref = tf.gather(self.niche_centers, spp_ids)
+        niche_pref_soil = tf.gather(
+            niche_pref, tf.constant(self.org_to_soil_idx, dtype=tf.int32), axis=1
+        )
+        split = niche_pref_soil / (
+            tf.reduce_sum(niche_pref_soil, axis=1, keepdims=True) + 1e-9
+        )
+
+        desired_soil = remaining[:, tf.newaxis] * split
+        uptake = desired_soil * (available_soil / (available_soil + self.K_m))
+        deficits = tf.maximum(0.0, desired_soil - uptake)
+        return air_uptake, uptake, deficits
+
+    def _uptake_soil_proportional(self, desired_growth, curr_elementome,
+                                  spp_ids, available_soil):
+        """NEW mechanism: soil demand split by the local soil composition
+        p_e = I_e / I_S, with a single (pooled) Michaelis-Menten saturation
+        on the total soil pool I_S. The composition of the soil uptake is
+        exactly the soil composition; the amount depends on I_S."""
+        air_uptake, remaining = self._air_uptake(desired_growth, curr_elementome)
+
+        pool = tf.reduce_sum(available_soil, axis=1, keepdims=True)    # I_S, shape [n, 1]
+        split = available_soil / (pool + 1e-9)                         # p_e
+        sat = pool / (pool + self.K_m_pool)                            # sigma_S
+
+        desired_soil = remaining[:, tf.newaxis] * split
+        uptake = desired_soil * sat                                    # R * p_e * sigma_S
+        deficits = tf.maximum(0.0, desired_soil - uptake)
+        return air_uptake, uptake, deficits

@@ -32,6 +32,13 @@ SOIL_ELEMENTS = [e for e in ORG_ELEMENTS if e not in ATMOSPHERIC_ELEMENTS]
 
 N_ORG = len(ORG_ELEMENTS)
 N_SOIL = len(SOIL_ELEMENTS)
+UPTAKE_OPTIONS = ["niche", "soil"]
+UPTAKE_LABELS = {
+    "niche": "Niche-proportional (old)",
+    "soil": "Soil-proportional, pooled saturation (new)",
+}
+DEFAULT_K_M = 0.1
+DEFAULT_K_M_POOL = round(N_SOIL * DEFAULT_K_M, 3)   # 0.9 with 9 soil elements
 DEFAULT_N_SPP = 5
 
 
@@ -154,6 +161,9 @@ def _build_config_dict() -> dict:
             st.session_state.get(f"seed_mass_spp{i}", st.session_state.get("seed_mass", 0.05))
             for i in range(_n)
         ],
+        "uptake_mode": st.session_state.get("uptake_mode", "niche"),
+        "K_m": st.session_state.get("K_m", DEFAULT_K_M),
+        "K_m_pool": st.session_state.get("K_m_pool", DEFAULT_K_M_POOL),
     }
 
 
@@ -202,7 +212,7 @@ def _apply_config(params: dict):
         "temperature_mean", "temperature_amplitude", "temperature_period",
         "temperature_phase", "temperature_spatial_strength",
         "temperature_growth_strength", "temperature_respiration_strength",
-        "temperature_mineralization_strength",
+        "temperature_mineralization_strength", "uptake_mode", "K_m", "K_m_pool",
     ]
 
     if "N_SPP" in params:
@@ -299,7 +309,9 @@ def _make_model(
         shock_field_persistence, shock_field_smoothing_passes,
         temperature_mean, temperature_amplitude, temperature_period, temperature_phase,
         temperature_spatial_strength,
-        temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength
+        temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength,
+        uptake_mode="niche", K_m=0.1, K_m_pool=None,
+
 ):
     return HybridEcosystem(
         height=H,
@@ -350,6 +362,9 @@ def _make_model(
         temperature_growth_strength=temperature_growth_strength,
         temperature_respiration_strength=temperature_respiration_strength,
         temperature_mineralization_strength=temperature_mineralization_strength,
+        uptake_mode=uptake_mode,
+        K_m=K_m,
+        K_m_pool=K_m_pool
     )
 
 
@@ -375,6 +390,7 @@ def _run_one_seed(
         temperature_mean, temperature_amplitude, temperature_period, temperature_phase,
         temperature_spatial_strength,
         temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength,
+        uptake_mode, K_m, K_m_pool,
         resume_state=None, start_step=0
 ):
     tf.random.set_seed(seed)
@@ -396,6 +412,7 @@ def _run_one_seed(
         temperature_mean, temperature_amplitude, temperature_period, temperature_phase,
         temperature_spatial_strength,
         temperature_growth_strength, temperature_respiration_strength, temperature_mineralization_strength,
+        uptake_mode=uptake_mode, K_m=K_m, K_m_pool=K_m_pool,
     )
     n_spp = len(spp_centers)
 
@@ -581,33 +598,33 @@ with st.sidebar:
         W = st.number_input("Grid Width", 10, 500, 100, key="W")
         MAX_AGENTS = st.number_input("Max Agents", 10000, 500000, 150000, key="MAX_AGENTS", step=10000)
         max_agents_per_cell = st.number_input("Max Agents per Cell", 1, 20, 3, key="max_agents_per_cell")
-        N_STEPS = st.slider("Number of Steps", 100, 5000, 1500, key="N_STEPS", step=100)
+        N_STEPS = st.slider("Number of Steps", 1000, 100000, 20000, key="N_STEPS", step=1000)
         SEED = st.number_input("Random Seed", 0, 9999, 35, key="SEED")
         NSEEDS = st.slider(
             "Ensemble Seeds", 1, 20, 1, key="NSEEDS",
             help="Run N simulations from SEED to SEED+N-1 and average results."
         )
         scalar_interval = st.number_input(
-            "Scalar record interval", 1, 500, 20, key="scalar_interval",
+            "Scalar record interval", 1, 10000, 100, key="scalar_interval",
             help="Record biomass/agents/elements every N steps."
         )
         snapshot_interval = st.number_input(
-            "Spatial snapshot interval", 1, 500, 50, key="snapshot_interval",
+            "Spatial snapshot interval", 1, 10000, 100, key="snapshot_interval",
             help="Save full grid maps every N steps."
         )
 
         st.subheader("Biological Rates & Aging")
-        growth_rate = st.slider("Growth Rate", 0.01, 1.0, 0.45, key="growth_rate", step=0.01)
+        growth_rate = st.slider("Growth Rate", 0.001, 1.0, 0.45, key="growth_rate", step=0.01)
         respiration_rate = st.slider("Respiration Rate", 0.001, 0.1, 0.015, key="respiration_rate", step=0.001, format="%.3f")
         turnover_rate = st.slider("Turnover Rate", 0.001, 0.1, 0.03, key="turnover_rate", step=0.001, format="%.3f")
-        max_age = st.slider("Max Age (Senescence)", 10.0, 500.0, 50.0, key="max_age", step=5.0)
-        mineralization_rate = st.slider("Mineralization Rate", 0.01, 0.2, 0.05, key="mineralization_rate", step=0.005)
+        max_age = st.slider("Max Age (Senescence)", 10.0, 1000.0, 50.0, key="max_age", step=5.0)
+        mineralization_rate = st.slider("Mineralization Rate", 0.001, 0.5, 0.05, key="mineralization_rate", step=0.005)
         seed_cost = st.slider("Seed Cost", 0.001, 0.1, 0.02, key="seed_cost", step=0.001, format="%.3f")
         seed_mass = st.slider("Seed Mass", 0.001, 0.1, 0.02, key="seed_mass", step=0.001, format="%.3f")
         K_biomass = st.slider("K Biomass", 0.5, 10.0, 2.5, key="K_biomass", step=0.1)
-        soil_input_rate = st.slider("Soil Input Rate", 0.1, 2.0, 0.5, key="soil_input_rate", step=0.05)
+        soil_input_rate = st.slider("Soil Input Rate", 0.01, 10.0, 0.5, key="soil_input_rate", step=0.05)
         sigma_threshold = st.slider(
-            "Sigma Threshold", 0.1, 5.0, 3.0, key="sigma_threshold", step=0.1,
+            "Sigma Threshold", 0.01, 10.0, 3.0, key="sigma_threshold", step=0.1,
             help="Niche fitness sensitivity. Lower = steeper fitness drop away from niche center."
         )
 
@@ -636,7 +653,35 @@ with st.sidebar:
             "Input Drift Scale", 0.0, 0.3, 0.08, key="input_drift_scale", step=0.01,
             help="Noise on soil nutrient input ratio each step. Higher = more environmental fluctuation."
         )
-
+        st.subheader("Nutrient Uptake Mechanism")
+        _cur_mode = st.session_state.get("uptake_mode", "niche")
+        if _cur_mode not in UPTAKE_OPTIONS:
+            _cur_mode = "niche"
+        uptake_mode = st.selectbox(
+            "Uptake mechanism",
+            options=UPTAKE_OPTIONS,
+            index=UPTAKE_OPTIONS.index(_cur_mode),
+            format_func=lambda k: UPTAKE_LABELS[k],
+            key="uptake_mode",
+            help=(
+                "Niche: soil demand is split according to the species niche center. "
+                "Soil: soil demand is split according to the local soil composition, "
+                "with one saturation on the total soil pool."
+            ),
+        )
+        K_m = st.number_input(
+            "K_m (per element)", 0.001, 5.0, DEFAULT_K_M,
+            step=0.01, format="%.3f", key="K_m",
+            help="Half-saturation constant of each soil element. Used by the niche mechanism only."
+        )
+        K_m_pool = st.number_input(
+            "K_m pool (total soil)", 0.01, 20.0, DEFAULT_K_M_POOL,
+            step=0.05, format="%.3f", key="K_m_pool",
+            help=(
+                "Half-saturation constant of the total soil pool. Used by the soil mechanism only. "
+                f"Default = N_soil x K_m = {DEFAULT_K_M_POOL}."
+            ),
+        )
         st.subheader(f"Soil Base Ratios {SOIL_ELEMENTS}")
         soil_cols = st.columns(2)
         sbr = []
@@ -991,6 +1036,7 @@ if run_btn:
 
     all_runs = []
     for i, seed in enumerate(range(SEED, SEED + NSEEDS)):
+        
         resume_state = None if resume_states is None else resume_states[i]
 
         result = _run_one_seed(
@@ -1037,6 +1083,9 @@ if run_btn:
             temperature_growth_strength=temperature_growth_strength,
             temperature_respiration_strength=temperature_respiration_strength,
             temperature_mineralization_strength=temperature_mineralization_strength,
+            uptake_mode=uptake_mode,
+            K_m=K_m,
+            K_m_pool=K_m_pool,
         )
         all_runs.append(result)
 
@@ -1195,6 +1244,9 @@ if run_btn:
             "temperature_growth_strength": temperature_growth_strength,
             "temperature_respiration_strength": temperature_respiration_strength,
             "temperature_mineralization_strength": temperature_mineralization_strength,
+            "uptake_mode": uptake_mode,
+            "K_m": K_m,
+            "K_m_pool": K_m_pool,
         },
         "history_biomass": history_biomass,
         "history_elements": history_elements,
