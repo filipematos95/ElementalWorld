@@ -17,6 +17,8 @@ import tensorflow as tf
 
 from models.hybridmodel import HybridEcosystem
 import backend.plotting as ep
+import backend.niche_plotting as nplt
+
 
 
 st.set_page_config(page_title="Ecosystem Simulator", page_icon="🌿", layout="wide")
@@ -40,6 +42,7 @@ UPTAKE_LABELS = {
 DEFAULT_K_M = 0.1
 DEFAULT_K_M_POOL = round(N_SOIL * DEFAULT_K_M, 3)   # 0.9 with 9 soil elements
 DEFAULT_N_SPP = 5
+NICHE_MAX_SAMPLES = 400   # individuals kept per species and snapshot for the niche plots
 
 
 TRACE_ELEMENTS = {"P", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"}
@@ -283,6 +286,8 @@ def _apply_everything(data: dict):
         "n_seeds_used": params.get("NSEEDS", st.session_state.get("NSEEDS", 1)),
         "N_SPP": n_spp,
         "history_spp_elemental_dissimilarity": data.get("history_spp_elemental_dissimilarity", []),
+        "history_spp_niche": data.get("history_spp_niche", []),
+        "niche_meta": data.get("niche_meta", None),
     }
 
     st.session_state["soil_snapshot"] = data.get("soil_snapshot", st.session_state.get("soil_snapshot", None))
@@ -438,6 +443,7 @@ def _run_one_seed(
     history_deficit = [[] for _ in range(n_spp)]
     history_spp_age = [[] for _ in range(n_spp)]
     history_spp_elemental_dissimilarity = []
+    history_spp_niche = []
 
     mean_biomass = 0.0
     total_end_step = start_step + N_STEPS
@@ -471,6 +477,9 @@ def _run_one_seed(
             history_biomass_grid.append(grid_total)
             for s_id in range(n_spp):
                 history_spp_grid[s_id].append(model.get_species_biomass(s_id))
+            niche_snap = model.get_niche_snapshot(max_per_species=NICHE_MAX_SAMPLES)
+            niche_snap["step"] = t
+            history_spp_niche.append(niche_snap)
 
         overall = (prog_offset + ((t - start_step) + 1) / N_STEPS) / prog_total
         prog_bar.progress(min(overall, 1.0))
@@ -493,6 +502,7 @@ def _run_one_seed(
         history_deficit=history_deficit,
         history_spp_age=history_spp_age,
         history_spp_elemental_dissimilarity=history_spp_elemental_dissimilarity,
+        history_spp_niche=history_spp_niche,
         model=model,  # <-- STORED MODEL INSTANCE FOR DIAGNOSTICS
         final_state=dict(
             agents=model.agents.numpy().copy(),
@@ -1155,6 +1165,19 @@ if run_btn:
             for s in range(N_SPP)
         ]
 
+    history_spp_niche = nplt.merge_niche_runs(
+        [r["history_spp_niche"] for r in all_runs], max_per_species=NICHE_MAX_SAMPLES
+    )
+    _c = np.array(spp_centers, dtype=np.float32)
+    niche_meta = dict(
+        centers=_c / _c.sum(axis=1, keepdims=True),   # same normalisation as HybridEcosystem
+        covariances=np.array(SPP_COVARIANCES, dtype=np.float32),
+        sigma=float(sigma_threshold),
+        elements=list(ORG_ELEMENTS),
+    )
+    if previous_results is not None:
+        history_spp_niche = list(previous_results.get("history_spp_niche", [])) + list(history_spp_niche)
+
     soil_snapshot = all_runs[0]["soil_snap"]
     completed_steps = start_step + N_STEPS
 
@@ -1179,6 +1202,8 @@ if run_btn:
         history_deficit=history_deficit,
         history_spp_grid=history_spp_grid,
         history_spp_age=history_spp_age,
+        history_spp_niche=history_spp_niche,
+        niche_meta=niche_meta,
         N_STEPS=completed_steps,
         scalar_interval=scalar_interval,
         snapshot_interval=snapshot_interval,
@@ -1262,6 +1287,8 @@ if run_btn:
         "soil_snapshot": soil_snapshot,
         "history_spp_age": history_spp_age,
         "history_spp_elemental_dissimilarity": history_spp_elemental_dissimilarity,
+        "history_spp_niche": history_spp_niche,
+        "niche_meta": niche_meta,
         "final_states": [r["final_state"] for r in all_runs],
         "completed_steps": completed_steps,
     }
@@ -1297,8 +1324,9 @@ if st.session_state["ran"]:
             f"Spatial maps show the average grid."
         )
 
-    tab_soil, tab_bio, tab_spp, tab_maps = st.tabs([
-        "🌍 Initial Soil", "📈 Biomass & Pools", "🧬 Species Dynamics", "🗺️ Spatial Maps"
+    tab_soil, tab_bio, tab_spp, tab_maps, tab_niche = st.tabs([
+        "🌍 Initial Soil", "📈 Biomass & Pools", "🧬 Species Dynamics", "🗺️ Spatial Maps",
+        "🧪 Biogeochemical Niche"
     ])
 
     with tab_soil:
@@ -1683,7 +1711,134 @@ if st.session_state["ran"]:
                         )
 
         _maps_fragment()
+    with tab_niche:
+        @st.fragment
+        def _niche_fragment():
+            niche = res.get("history_spp_niche", [])
+            if len(niche) == 0:
+                st.info(
+                    "No niche snapshots in these results (older .pkl, or no snapshots recorded). "
+                    "Run the simulation again to record them."
+                )
+                return
 
+            meta = res.get("niche_meta")
+            if meta is None:  # results saved before niche_meta existed: fall back to the sidebar
+                _c = np.array(spp_centers, dtype=np.float32)
+                meta = dict(
+                    centers=_c / _c.sum(axis=1, keepdims=True),
+                    covariances=np.array(SPP_COVARIANCES, dtype=np.float32),
+                    sigma=float(sigma_threshold),
+                    elements=list(ORG_ELEMENTS),
+                )
+            elements = list(meta["elements"])
+            n_spp = len(RES_SPP_LABELS)
+            n_niche = len(niche)
+
+            st.caption(
+                "Each frame shows the elementome of the living individuals of every species "
+                "(★ niche center · ◆ mean composition · solid ellipse = realized niche, 95 % · "
+                "dashed / dotted ellipses = fundamental niche at fitness 0 / 0.5 · dots = individuals)."
+            )
+
+            c1, c2, c3 = st.columns(3)
+            view_label = c1.radio(
+                "Niche space", ["PCA (all elements)", "Element pair"],
+                horizontal=True, key="niche_view",
+            )
+            layout_label = c2.radio(
+                "Layout", ["All species overlaid", "One panel per species"],
+                horizontal=True, key="niche_layout",
+            )
+            zoom = c3.checkbox(
+                "Zoom to realized composition", value=True, key="niche_zoom",
+                help="Off = also fit the whole fundamental niche (usually much wider than the realized one).",
+            )
+
+            view = "pca" if view_label.startswith("PCA") else "pair"
+            per_species = layout_label.startswith("One")
+            pair = None
+            if view == "pair":
+                px_col, py_col = st.columns(2)
+                ex = px_col.selectbox(
+                    "X axis", list(range(len(elements))), format_func=lambda i: elements[i],
+                    index=elements.index("N") if "N" in elements else 0, key="niche_x",
+                )
+                ey = py_col.selectbox(
+                    "Y axis", list(range(len(elements))), format_func=lambda i: elements[i],
+                    index=elements.index("P") if "P" in elements else min(1, len(elements) - 1),
+                    key="niche_y",
+                )
+                pair = (ex, ey)
+
+            o1, o2, o3 = st.columns(3)
+            show_points = o1.checkbox("Individuals", value=True, key="niche_pts")
+            show_real = o2.checkbox("Realized niche", value=True, key="niche_real")
+            show_fund = o3.checkbox("Fundamental niche", value=True, key="niche_fund")
+
+            proj = nplt.make_projection(niche, meta, view=view, pair=pair)
+            axis_range = nplt.compute_axis_ranges(niche, meta, proj, zoom=zoom)
+
+            if n_niche > 1:
+                snap_i = st.slider(
+                    f"Snapshot (recorded every {snapshot_interval} steps)",
+                    0, n_niche - 1, n_niche - 1, key="niche_snap_slider",
+                )
+            else:
+                snap_i = 0
+
+            st.plotly_chart(
+                nplt.plot_niche_snapshot(
+                    niche[snap_i], meta, proj, RES_SPP_LABELS,
+                    per_species=per_species, show_points=show_points,
+                    show_real=show_real, show_fund=show_fund, axis_range=axis_range,
+                ),
+                width='stretch',
+            )
+
+            st.divider()
+            st.markdown("### Niche drift through time")
+            t1, t2 = st.columns(2)
+            with t1:
+                st.plotly_chart(
+                    nplt.plot_niche_trajectory(niche, meta, proj, RES_SPP_LABELS),
+                    width='stretch',
+                )
+            with t2:
+                st.plotly_chart(
+                    nplt.plot_niche_distance(niche, meta, RES_SPP_LABELS),
+                    width='stretch',
+                )
+
+            st.divider()
+            st.markdown("### 🎞️ Niche animation")
+            niche_fps = st.slider("Niche GIF FPS", 1, 10, 2, key="niche_gif_fps")
+            gif_key = (
+                f"gif_niche_{st.session_state['run_count']}_{n_niche}_{view}_{pair}_{per_species}_"
+                f"{zoom}_{show_points}_{show_real}_{show_fund}_{niche_fps}"
+            )
+            if st.button("Generate niche GIF", key="niche_gif_btn"):
+                with st.spinner("Rendering niche frames…"):
+                    st.session_state[gif_key] = nplt.make_niche_gif(
+                        niche, meta, proj, RES_SPP_LABELS,
+                        per_species=per_species, show_points=show_points,
+                        show_real=show_real, show_fund=show_fund,
+                        fps=niche_fps, axis_range=axis_range,
+                    )
+            if gif_key in st.session_state:
+                import base64
+                gif = st.session_state[gif_key]
+                b64 = base64.b64encode(gif).decode()
+                st.markdown(
+                    f'<img src="data:image/gif;base64,{b64}" style="width:100%; max-width:760px; border-radius:6px;">',
+                    unsafe_allow_html=True,
+                )
+                st.download_button(
+                    "⬇️ Download", data=gif, file_name="biogeochemical_niche.gif",
+                    mime="image/gif", key="dl_niche_gif",
+                )
+
+        _niche_fragment()
     st.divider()
     st.subheader("💾 Save Results")
     col_name, col_save, col_dl = st.columns([3, 1, 1])

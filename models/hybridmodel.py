@@ -457,6 +457,8 @@ class HybridEcosystem:
         fr = tf.clip_by_value(fp / (fin_mass_alive[:, tf.newaxis] + 1e-9), 0.01, 0.99)
         fr = fr / (tf.reduce_sum(fr, axis=1, keepdims=True) + 1e-9)
 
+
+
         rec_vals = tf.gather(
             loss_full, tf.constant(self.org_to_soil_idx, dtype=tf.int32), axis=1
         )
@@ -865,3 +867,70 @@ class HybridEcosystem:
         uptake = desired_soil * sat                                    # R * p_e * sigma_S
         deficits = tf.maximum(0.0, desired_soil - uptake)
         return air_uptake, uptake, deficits
+
+    def get_niche_snapshot(self, max_per_species=400):
+            """
+            Snapshot of the realized biogeochemical niche of every species.
+    
+            For each species it summarises the elementome (fractions of the N_org
+            elements) of all living agents, and keeps a random subsample of
+            individuals so the cloud can be plotted without storing the full buffer.
+    
+            Returns a dict (numpy only, pickle-friendly):
+                n        (S,)       living individuals per species
+                mean     (S, E)     mean elementome of living individuals (NaN if n == 0)
+                cov      (S, E, E)  sample covariance of the elementome (NaN if n < 2)
+                samples  list[S] of (m_s, E) subsampled elementomes, m_s <= max_per_species
+                fitness  list[S] of (m_s,)   niche fitness of those individuals
+                mass     list[S] of (m_s,)   mass of those individuals
+            The simulation step is added by the caller under the key "step".
+            """
+            S, E = self.N_spp, self.N_org
+            data = self.agents.numpy()
+            data = data[data[:, self.I_ALIVE] > 0.5]
+            spp = data[:, self.I_SPP].astype(np.int64)
+    
+            centers = self.niche_centers.numpy().astype(np.float64)
+            tol_inv = self.tolerance_inv.numpy().astype(np.float64)
+    
+            snap = {
+                "n": np.zeros(S, dtype=np.int64),
+                "mean": np.full((S, E), np.nan, dtype=np.float32),
+                "cov": np.full((S, E, E), np.nan, dtype=np.float32),
+                "samples": [],
+                "fitness": [],
+                "mass": [],
+            }
+    
+            for s in range(S):
+                rows = data[spp == s]
+                n = rows.shape[0]
+                snap["n"][s] = n
+                if n == 0:
+                    snap["samples"].append(np.zeros((0, E), dtype=np.float32))
+                    snap["fitness"].append(np.zeros((0,), dtype=np.float32))
+                    snap["mass"].append(np.zeros((0,), dtype=np.float32))
+                    continue
+    
+                X = rows[:, self.I_E0:self.I_E1].astype(np.float64)
+                m = rows[:, self.I_MASS]
+    
+                snap["mean"][s] = X.mean(axis=0)
+                if n >= 2:
+                    snap["cov"][s] = np.cov(X, rowvar=False)
+    
+                # same fitness definition as _compute_niche_fitness_mahalanobis
+                delta = X - centers[s]
+                d2 = np.einsum("ni,ij,nj->n", delta, tol_inv[s], delta)
+                fit = np.clip(1.0 - d2 / (self.sigma_threshold ** 2), 0.0, 1.0)
+    
+                if n > max_per_species:
+                    sel = np.random.choice(n, max_per_species, replace=False)
+                    X, m, fit = X[sel], m[sel], fit[sel]
+    
+                snap["samples"].append(X.astype(np.float32))
+                snap["fitness"].append(fit.astype(np.float32))
+                snap["mass"].append(m.astype(np.float32))
+    
+            return snap
+    
