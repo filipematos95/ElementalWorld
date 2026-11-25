@@ -454,10 +454,12 @@ class HybridEcosystem:
 
         fin_mass_alive = (fin_mass - turn) * alive
 
-        fr = tf.clip_by_value(fp / (fin_mass_alive[:, tf.newaxis] + 1e-9), 0.01, 0.99)
+        fr = tf.clip_by_value(
+            fp / (fin_mass_alive[:, tf.newaxis] + 1e-9),
+            0.001 * my_centers,   # relative floor, same as min_quota
+            0.99,
+        )
         fr = fr / (tf.reduce_sum(fr, axis=1, keepdims=True) + 1e-9)
-
-
 
         rec_vals = tf.gather(
             loss_full, tf.constant(self.org_to_soil_idx, dtype=tf.int32), axis=1
