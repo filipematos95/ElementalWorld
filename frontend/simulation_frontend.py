@@ -45,7 +45,7 @@ DEFAULT_N_SPP = 5
 NICHE_MAX_SAMPLES = 400   # individuals kept per species and snapshot for the niche plots
 
 
-TRACE_ELEMENTS = {"P", "Ca", "Mg", "S", "Fe", "Mn", "Zn", "O"}
+TRACE_ELEMENTS = {"P", "Ca", "Mg", "S", "Fe", "Mn", "Zn"}
 
 def _display_scale_for_element(el: str) -> float:
     if el in {"Fe", "Mn", "Zn"}:
@@ -450,6 +450,21 @@ def _run_one_seed(
 
     for t in range(start_step, total_end_step):
         n_agents = model.step("mahalanobis")
+        if t in [1, 10, 20, 30, 40, 50]:
+            diag = model.get_agent_diagnostics_df()
+            if diag is None:
+                print(f"Step {t:2d}: EXTINCT")
+                break
+            print(
+                f"Step {t:2d} | n={len(diag['mass']):4d} | "
+                f"mass={np.mean(diag['mass']):.3f} | "
+                f"fit={np.mean(diag['fitness']):.3f} | "
+                f"limit_g={np.mean(diag['limit_g']):.3f} ({pd.Series(diag['limiting_element']).value_counts().index[0]}) | "
+                f"C+O={1.0 - np.sum([np.mean(diag['N_comp']), np.mean(diag['P_comp'])]):.3f}"
+            )
+            for s in range(model.N_spp):
+                print(f"Species {s} centers:", dict(zip(model.org_elements, np.round(model.niche_centers[s].numpy(), 6))))
+                print("Init agent 0 elementome:", dict(zip(model.org_elements, np.round(model.agents[0, model.I_E0:model.I_E1].numpy(), 6))))
         grid_total = model.get_biomass_grid()
 
         if t % scalar_interval == 0:
@@ -1750,10 +1765,16 @@ if st.session_state["ran"]:
                 "Layout", ["All species overlaid", "One panel per species"],
                 horizontal=True, key="niche_layout",
             )
-            zoom = c3.checkbox(
-                "Zoom to realized composition", value=True, key="niche_zoom",
-                help="Off = also fit the whole fundamental niche (usually much wider than the realized one).",
+            fit_label = c3.selectbox(
+                "Axis range",
+                ["Fundamental niche", "Realized composition", "Both"],
+                index=0, key="niche_fit",
+                help="The fundamental ellipse is usually much wider than the realized cloud. "
+                     "With 'Realized composition' it falls outside the plot and only the center is visible.",
             )
+            fit = {"Fundamental niche": "fundamental",
+                   "Realized composition": "realized",
+                   "Both": "both"}[fit_label]
 
             view = "pca" if view_label.startswith("PCA") else "pair"
             per_species = layout_label.startswith("One")
@@ -1777,7 +1798,7 @@ if st.session_state["ran"]:
             show_fund = o3.checkbox("Fundamental niche", value=True, key="niche_fund")
 
             proj = nplt.make_projection(niche, meta, view=view, pair=pair)
-            axis_range = nplt.compute_axis_ranges(niche, meta, proj, zoom=zoom)
+            axis_range = nplt.compute_axis_ranges(niche, meta, proj, fit=fit)
 
             if n_niche > 1:
                 snap_i = st.slider(
@@ -1815,7 +1836,7 @@ if st.session_state["ran"]:
             niche_fps = st.slider("Niche GIF FPS", 1, 10, 2, key="niche_gif_fps")
             gif_key = (
                 f"gif_niche_{st.session_state['run_count']}_{n_niche}_{view}_{pair}_{per_species}_"
-                f"{zoom}_{show_points}_{show_real}_{show_fund}_{niche_fps}"
+                f"{fit}_{show_points}_{show_real}_{show_fund}_{niche_fps}"
             )
             if st.button("Generate niche GIF", key="niche_gif_btn"):
                 with st.spinner("Rendering niche frames…"):

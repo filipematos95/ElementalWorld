@@ -60,7 +60,11 @@ class HybridEcosystem:
             e for e in self.org_elements if e not in self.atmospheric_elements
         ]
 
-        self.K_m = 0.1     
+        self.N_org = len(self.org_elements)
+        self.N_soil = len(self.soil_elements)
+        self.org_to_soil_idx = [self.org_elements.index(e) for e in self.soil_elements]
+
+        self.K_m = K_m  
         self.K_m_pool = K_m_pool if K_m_pool is not None else self.K_m * self.N_soil                # half-saturation constant (was a local in step)
         self.uptake_mode = uptake_mode     # "niche" (old) or "soil" (new)
         self._uptake_fn = {
@@ -239,7 +243,10 @@ class HybridEcosystem:
         mass = tf.ones((count,)) * 0.1
 
         center = self.niche_centers[species_id]
-        raw = center[tf.newaxis, :] * tf.random.normal((count, self.N_org), mean=1.0, stddev=0.05)
+        chol = tf.linalg.cholesky(self.tolerance_cov[species_id])
+        z = tf.random.normal((count, self.N_org), mean=0.0, stddev=0.35)
+        raw = center[tf.newaxis, :] + tf.matmul(z, chol, transpose_b=True)
+        raw = tf.maximum(raw, 0.002 * center[tf.newaxis, :])
         stoich = raw / tf.reduce_sum(raw, axis=1, keepdims=True)
 
         new_data = tf.concat([
@@ -640,8 +647,7 @@ class HybridEcosystem:
         delta = elementome_vals - my_centers
         inv_cov = tf.gather(self.tolerance_inv, spp_ids)
         mahal_sq = tf.reduce_sum(delta * tf.einsum('ni,nij->nj', delta, inv_cov), axis=1)
-        mahal_dist = tf.sqrt(mahal_sq)
-        niche_fitness = 1.0 - tf.square(mahal_dist / self.sigma_threshold)
+        niche_fitness = 1.0 - (mahal_sq / tf.square(self.sigma_threshold))
         return tf.clip_by_value(niche_fitness, 0.0, 1.0)
 
     def get_species_mean_fitness(self, species_id):
@@ -802,7 +808,7 @@ class HybridEcosystem:
         p_comp = elementome[:, 2]
 
         Q = elementome
-        g = tf.maximum(0.0, 1.0 - 0.01 / (Q + 1e-9))
+        g = tf.maximum(0.0, 1.0 - (0.01 * my_centers) / (Q + 1e-9))
         limit_g = tf.reduce_min(g, axis=1)
         limiting_idx = tf.argmin(g, axis=1).numpy()
 
@@ -864,7 +870,7 @@ class HybridEcosystem:
         pool = tf.reduce_sum(available_soil, axis=1, keepdims=True)    # I_S, shape [n, 1]
         split = available_soil / (pool + 1e-9)                         # p_e
         sat = pool / (pool + self.K_m_pool)                            # sigma_S
-
+        air_uptake = air_uptake * sat                                  # Couple C+O uptake to soil saturation
         desired_soil = remaining[:, tf.newaxis] * split
         uptake = desired_soil * sat                                    # R * p_e * sigma_S
         deficits = tf.maximum(0.0, desired_soil - uptake)

@@ -176,32 +176,37 @@ def realized_geometry(snap, proj, s):
     return c, ellipse_xy(c, proj.cov(C), np.sqrt(CHI2_95_2DOF))
 
 
-def compute_axis_ranges(niche, meta, proj, zoom=True, pad=0.15):
+def compute_axis_ranges(niche, meta, proj, fit="fundamental", pad=0.08):
     """
     Fixed (xrange, yrange) valid for ALL snapshots, so frames are comparable.
-    zoom=True  -> fit individuals, realized ellipses and niche centers.
-    zoom=False -> additionally fit the whole fundamental niche (fitness 0).
+    fit="fundamental": niche centers + the whole fundamental niche (fitness-0 ellipse)
+    fit="realized"   : niche centers + individuals + realized ellipses
+                       (the fundamental ellipse is usually far outside this view)
+    fit="both"       : everything
     """
+    use_fund = fit in ("fundamental", "both")
+    use_real = fit in ("realized", "both")
     xs, ys = [], []
     S = len(meta["centers"])
     for s in range(S):
         c, e0, _ = fundamental_geometry(meta, proj, s)
         xs.append(np.array([c[0]]))
         ys.append(np.array([c[1]]))
-        if not zoom and e0 is not None:
+        if use_fund and e0 is not None:
             xs.append(e0[0])
             ys.append(e0[1])
-    for snap in niche:
-        for X in snap["samples"]:
-            if len(X):
-                P = proj.point(X)
-                xs.append(P[:, 0])
-                ys.append(P[:, 1])
-        for s in range(S):
-            _, re = realized_geometry(snap, proj, s)
-            if re is not None:
-                xs.append(re[0])
-                ys.append(re[1])
+    if use_real:
+        for snap in niche:
+            for X in snap["samples"]:
+                if len(X):
+                    P = proj.point(X)
+                    xs.append(P[:, 0])
+                    ys.append(P[:, 1])
+            for s in range(S):
+                _, re = realized_geometry(snap, proj, s)
+                if re is not None:
+                    xs.append(re[0])
+                    ys.append(re[1])
 
     def _rng(v):
         v = np.concatenate(v)
@@ -433,7 +438,7 @@ def make_niche_gif(niche, meta, proj, labels, per_species=False, show_points=Tru
     S = len(labels)
     colors = colors or SPP_COLORS
     if axis_range is None:
-        axis_range = compute_axis_ranges(niche, meta, proj, zoom=True)
+        axis_range = compute_axis_ranges(niche, meta, proj, fit="realized")
 
     frames = []
     for snap in niche:
